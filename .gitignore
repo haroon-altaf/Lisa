@@ -2,7 +2,7 @@
 /lisp_venv/
 
 # Ignore specific untracked folder
-/Non Program Files/  # Replace with the actual name of your folder
+/Non Program Files/
 
 # Ignore Python compiled files
 __pycache__/
@@ -13,3 +13,5 @@ __pycache__/
 .vscode/
 *.swp
 *~
+Non Program Files/query.sql
+Main.py
