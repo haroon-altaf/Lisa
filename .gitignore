@@ -1,0 +1,15 @@
+# Ignore virtual environment directory
+/lisp_venv/
+
+# Ignore specific untracked folder
+/Non Program Files/  # Replace with the actual name of your folder
+
+# Ignore Python compiled files
+__pycache__/
+*.pyc
+
+# Ignore common editor/IDE files (add or remove as needed)
+.idea/
+.vscode/
+*.swp
+*~
