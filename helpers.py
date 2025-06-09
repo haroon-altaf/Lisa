@@ -10,29 +10,54 @@ from requests.adapters import HTTPAdapter
 from typing import List, Dict
 from urllib3.util.retry import Retry
 
+"""A module containing utility functions and classes for web scraping tasks."""
+
 #%%
+"""
+WebSession class for managing web requests with user-agent rotation and session renewal.
+
+Attributes:
+    timeout (int): Timeout for requests in seconds.
+    ua_rotation_interval (int): Number of successful requests before rotating the user-agent.
+    session_renewal_interval (int): Number of successful requests before renewing the session.
+    success_count (int): Counter for successful requests.
+    prev_url (str): Previous URL to use as a referer.
+    user_agent (str): Current user-agent string.
+    retry_strategy (Retry): Retry strategy for handling request failures.
+    session (requests.Session): The session object for making requests.
+
+Methods:
+    __enter__(): Returns the WebSession object for use in a context manager.
+    __exit__(exc_type, exc_val, exc_tb): Closes the session when exiting the context manager.
+    __init__(timeout, max_retries, backoff_factor, ua_rotation_interval, session_renewal_interval, ua_list): Initializes the WebSession object.
+    _init_session(): Initializes a requests.session with retry strategy.
+    _rotateuser_agent(): Rotates the user-agent string.
+    _renew_session(): Renews the session by closing and reinitializing it.
+    get(url): Makes a GET request to the specified URL with appropriate headers and handles retries. Exposed as a public method.
+
+"""
 class WebSession:
-    _ua_list = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", 
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Safari/605.1.15"
-    ]
 
     def __init__(
         self,
         timeout: int = 10,
         max_retries: int = 3,
         backoff_factor: float = 1.0,
-        ua_rotation_interval: int = 50,
-        session_renewal_interval: int = 100
+        ua_rotation_interval: int = 100,
+        session_renewal_interval: int = 300,
+        ua_list = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", 
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Safari/605.1.15"
+        ]
     ):
         self.timeout = timeout
         self.ua_rotation_interval = ua_rotation_interval
         self.session_renewal_interval = session_renewal_interval
         self.success_count = 0
         self.prev_url = "https://google.com"
-        self._user_agent = random.choice(self._ua_list)
+        self.user_agent = random.choice(ua_list)
 
         self.retry_strategy = Retry(
             total=max_retries,
@@ -51,13 +76,22 @@ class WebSession:
         self.session.mount("https://", adapter)
 
     def _rotate_user_agent(self):
-        self._user_agent = random.choice(self._ua_list)
+        self.user_agent = random.choice(self.ua_list)
 
     def _renew_session(self):
         self.session.close()
         self._init_session()
 
     def get(self, url: str) -> requests.Response | None:
+        
+        """
+        Makes a GET request to the specified URL with appropriate headers and handles retries.
+        Args:
+            url (str): The URL to make the GET request to.
+        Returns:
+            requests.Response | None: The response object if the request is successful, None otherwise.
+        """
+
         if self.success_count and self.success_count % self.ua_rotation_interval == 0:
             self._rotate_user_agent()
 
@@ -65,7 +99,7 @@ class WebSession:
             self._renew_session()
 
         headers = {
-            "User-Agent": self._user_agent,
+            "User-Agent": self.user_agent,
             "Referer": self.prev_url
         }
 
@@ -90,21 +124,21 @@ class WebSession:
 def parse_html(html_content: BeautifulSoup, search_tag: str, search_attrs: Dict[str, str] = {}, methods: List[Dict[str, str | Dict[str, str]]] = []) -> Tag | ResultSet:
 
     """
-    Extracts, from the full HTML content of a webpage, the HTML content of the relevant report sections, using the search parameters provided.
+    Extracts, from the full HTML content of a webpage obtained using BeautifulSoup, the HTML content of the relevant report sections.
     First the find() method is applied to the html_content using the specified search_tag and search_attrs.
     Then, further methods in the methods list are applied to the object returned by find(), sequentially, to navigate in the HTML tree.
 
     Args:
-        html_content (str): The full HTML content of the webpage as a string.
+        html_content (BeautifulSoup): The full HTML content of the webpage as a BeautifulSoup object.
         search_tag (str): The HTML tag to search for using the find() method.
-        search_attrs (dict[str, str]): A dictionary of attributes to search for using the find() method.
-        methods (list[dict[str, str | dict[str, str]]]): A list of dictionaries, each containing the: 
-                                                        (i) method to use, e.g., 'find_next_sibling' or 'find_parent'
-                                                        (ii) the HTML tag to search for using this method, e.g., 'p' or 'table'
-                                                        (iii) a dictionary of {attribute: value} pairs to search for using this method, e.g., {'class_': 'text-center'}
+        search_attrs (Dict): A dictionary of attributes to search for using the find() method.
+        methods (List): A list of dictionaries, each containing the: 
+                        (i) method to use, e.g., 'find_next_sibling' or 'find_parent'
+                        (ii) the HTML tag to search for using this method, e.g., 'p' or 'table'
+                        (iii) a dictionary of attribute: value pairs to search for using this method, e.g., {'class_': 'text-center'}
 
     Returns:
-        Tag | ResultSet: The HTML content of a relevant section of the report, returned as a Tag or ResultSet object.
+        Tag | ResultSet: The HTML content of a relevant section of the report, returned as a Tag or ResultSet (list of Tags) object.
     """
 
     target = html_content.find(search_tag, **search_attrs)
@@ -128,7 +162,7 @@ def p_to_str(html: Tag | ResultSet) -> str:
         html (Tag | ResultSet): The beautifulsoup object to convert.
 
     Returns:
-        str: The text within Tag/ResultSet elements as strings.
+        str: The text within Tag/ResultSet elements processed as strings.
     """
 
     if isinstance(html, Tag):
@@ -147,14 +181,15 @@ def p_to_str(html: Tag | ResultSet) -> str:
 def custom_table_to_df(table_list: ResultSet) -> List[pd.DataFrame]:
         
         """
-        Converts a BeautifulSoup ResultSet object with <Table> tags to a list of Pandas DataFrames.
+        Converts a BeautifulSoup ResultSet object with <Table> tags to a list of Pandas DataFrame objects.
         "*" characters are removed from table axes and numerical values are converted to floats where valid.
+        This function is used instead of pandas.read_html() to handle complex tables with dual headers and merged cells.
 
         Args:
-            table_list (ResultSet): The beautifulsoup ResultSet object to convert. This is iterable and accessible as a list.
+            table_list (ResultSet): The Beautifulsoup ResultSet object to convert. This is iterable and accessible as a list.
 
         Returns:
-            list[pd.DataFrame]: A list of Pandas DataFrames.
+            list[pd.DataFrame]: A list of Pandas DataFrame onjects.
         """
 
         extracted_tables = []
@@ -194,10 +229,10 @@ def custom_table_to_df(table_list: ResultSet) -> List[pd.DataFrame]:
             # Convert to DataFrame
             df = pd.DataFrame(table_data)
             df.columns = multi_index
-            df.set_index(df.columns[0], inplace=True)
+            df = df.set_index(df.columns[0])
             if isinstance(df.index.name, tuple):
                 df.index.name = df.index.name[-1]
-            df.fillna('', inplace=True)
+            df = df.fillna('')
             extracted_tables.append(df)
         
         return extracted_tables
