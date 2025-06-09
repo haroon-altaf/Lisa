@@ -1,15 +1,18 @@
 """
-This file contains information on how to find the relevant HTML sections in the web pages of the ISM Manufactiring and Services PMI reports.
-The Man_Pmi_Structure dictionary contains the information on the structure of the PMI reports.
-The Serv_Pmi_Structure dictionary contains the information on the structure of the PMI reports.
+Intro:
+This file contains information on how to find the relevant HTML sections in the ISM Manufactiring and Services PMI reports,
+using BeautifulSoup's .find() and other methods.
+The Man_Pmi_Structure dictionary contains information on navigating the manufacturing PMI reports.
+The Serv_Pmi_Structure dictionary contains information on navigating the services PMI reports.
+The function that uses these dictionaries is located in the helpers.py module.
 
-The keys in the dictionaries are the names of the sections in the report.
-Each key (section) has another dictionary as value, containing information of how to search for that section in the HTML.
-
+Structure of each dictionary:
+The keys in the dictionary are the names of the sections in the report.
+Each key has another dictionary as value, containing information of how to search for that section in the HTML structure.
 Each value dictionary has three keys: tag, attrs, and methods.
-The tag key contains the name of the HTML tag to search for, e.g., 'h1', 'h2', 'p', etc.
-The attrs key contains the attributes of the HTML tag in the form of key: value pairs where keys are attributes names and values are attribute values, e.g., {'class_': 'text-center'}.
-The methods key contains a list of dictionaries, each dictionary containing information on what methods to call on the HTML tag after finding it, in order to move in the HTM structure.
+The tag key contains the name of the HTML tag to search for using BeautifulSoup's .find() method (e.g., 'h1', 'h2', 'p').
+The attrs key contains the attributes of this HTML tag in the form of key: value pairs where keys are attribute names and values are attribute values, e.g., {'class_': 'text-center'}.
+The methods key contains a list of dictionaries, each dictionary containing information on what chain of methods to call after the first .find() method, in order to navigate to the target HTML content
 Each dictionary in the method list contains the method name to call, the tags to search for, and the attributes of that tag.
 
 Take the below key: value pair as an example:
@@ -22,13 +25,12 @@ Take the below key: value pair as an example:
         ]
     }
 
-This tells us that we need to find the h3 tag with id 'commodities' and then find the next sibling of that tag, which is a div, and then find the first child of that div, which is a p tag.
-
+This tells us that we need to find the <h3> tag with id='commodities' and then, find the next sibling with <div> tag, and then find the first child with <p> tag.
 target_html_tag = soup.find('h3', id='commodities').find_next_sibling('div').findChild('p')
 
-In the relevant module, these dictionaries are imported, and fed to a function that programmatically searches for the target HTML tags using the .find() and other methods from beautifulsoup.
-
-If there are any changes to the ISM reports' website struture, the dictionaries need to be updated. However, no other code will need to be changed.
+Usage of these dictionaries:
+In the relevant module, these dictionaries are imported, and fed to a function (defined in helpers.py) that programmatically searches for the target HTML tags using the .find() and other methods from beautifulsoup.
+If there are any changes to the ISM reports' website struture, the dictionaries will need to be updated. However, no other code would need changing.
 """
 
 Man_Pmi_Structure = {
