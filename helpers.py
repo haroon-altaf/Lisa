@@ -57,6 +57,7 @@ class WebSession:
         self.session_renewal_interval = session_renewal_interval
         self.success_count = 0
         self.prev_url = "https://google.com"
+        self.ua_list = ua_list
         self.user_agent = random.choice(ua_list)
 
         self.retry_strategy = Retry(
