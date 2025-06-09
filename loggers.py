@@ -1,6 +1,8 @@
 import logging
 import os
 
+"""This module sets up loggers for web scraping and database operations."""
+
 path = os.path.join(os.path.dirname(__file__), 'errors.log')
 file_handler = logging.FileHandler(path)
 file_handler.setFormatter(logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(message)s'))
