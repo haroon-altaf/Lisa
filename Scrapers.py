@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag, ResultSet
 from collections import namedtuple
 from datetime import datetime
+from functools import reduce
 from helpers import parse_html, p_to_str, custom_table_to_df, WebSession
 import io
 from ism_pmi_report_structures import Man_Pmi_Structure, Serv_Pmi_Structure
@@ -13,12 +14,26 @@ import pandas as pd
 import re
 from typing import List, Dict, NamedTuple, Tuple
 import zipfile
-# TODO: Replace pandas inplace methods; add docstrings
+
+"""A module containing classes to scrape and process economic reports and indicators from various sources."""
+
 #%%
 class ManufacturingPmi:
-
     """
     Represents an ISM Manufacturing PMI report.
+
+    Attributes:
+        sectors: A list of manufacturing sectors.
+        _html_content: The HTML content of the webpage as string.
+        _html_sections: A namedtuple containing the BeautifulSoup objects for relevant report sections.
+        _sections: A namedtuple containing the relevant report sections in str or Pandas DataFrame formats.
+    
+    Methods:
+        download: Downloads the Manufacturing PMI report from the ISM website. Defaults to the latest report.
+        _parse_html: Parses the HTML content of the Manufacturing PMI report and extracts relevant sections.
+        _transform_sections: Transforms the extracted HTML sections into strings (text) and Pandas DataFrames (tables).
+        _rankings: Ranks the manufacturing sectors based on the growth or contraction.
+        _respondents_say: Extracts the comments from the respondents and stores them in a Pandas DataFrame.
     """
 
     sectors = ["Apparel, Leather & Allied Products", "Chemical Products", "Computer & Electronic Products", "Electrical Equipment, Appliances & Components",
@@ -27,12 +42,9 @@ class ManufacturingPmi:
                "Printing & Related Support Activities", "Textile Mills", "Transportation Equipment", "Wood Products"]
 
     def __init__(self, html_content: str, html_sections: NamedTuple, sections: NamedTuple) -> None:
-
         """
-        Initializes a ManufacturingPmi object. Attributes are private, accessible through getter methods, to prevent assignment. Attributes are of immutable types to prevent modification.
+        Initializes a ManufacturingPmi object. Attributes are private, accessible through getter methods, to prevent assignment.
         Args:
-            url (str): The url of the webpage from which the report is obtained.
-            access_date (datetime): The date and time when the report was accessed.
             html_content (str): The HTML of the webpage.
             html_sections (namedtuple): A namedtuple containing the HTML for relevant report sections.
             sections (namedtuple): A namedtuple containing the relevant report sections in str or Pandas DataFrame formats (derived from processing html_sections).
@@ -55,8 +67,7 @@ class ManufacturingPmi:
         return self._sections
     
     @classmethod
-    def web_extract(cls, url: str | None = None) -> ManufacturingPmi | None:
-
+    def download(cls, url: str | None = None) -> ManufacturingPmi | None:
         """
         Extracts and transforms HTML from a webpage, and calls the constructor to create a ManufacturingPmi object.
         Args:
@@ -95,19 +106,18 @@ class ManufacturingPmi:
             return cls(html_content, html_sections_nt, sections_nt)
         
         except Exception as e:
-            web_scraping_logger.exception(f"Failed to fetch the ISM Manufacturing PMI webpage: {url}\nError: {e}\n\n")
+            web_scraping_logger.exception(f"\n\nFailed to fetch the ISM Manufacturing data from: {url}\nError: {e}")
             return None
 
     @classmethod
-    def _parse_html(cls, html_content: str) -> Dict[str, Tag | ResultSet]:
-
+    def _parse_html(cls, html_content: str) -> Dict[str, Tag | ResultSet | None]:
         """
-        Parses the webpage HTML using BeautifulSoup. Locates and stores the HTML of relevant report sections in a dictionary.
+        Parses the webpage HTML using BeautifulSoup. Locates and stores the HTML of relevant sections in a dictionary.
         The relevant sections and how to locate them in the HTML are defined in the ism_pmi_report_structures module.
         Args:
             html_content (str): The HTML of the webpage.
         Returns:
-            dict[str, Tag | ResultSet]: A dictionary containing the BeautifulSoup objects for relevant report sections:
+            dict[str, Tag | ResultSet]: A dictionary containing the BeautifulSoup objects for relevant report sections.
         """
 
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -119,19 +129,18 @@ class ManufacturingPmi:
                 search_methods = search_formula['methods']
 
                 try:
-                    chunk = parse_html(soup, search_tag, search_attrs, search_methods)
-                    if type(chunk) not in [Tag, ResultSet]:
-                        raise Exception(f"No content could be retrieved for '{segment}' using provided search parameters.")
-                except Exception as e:
-                    web_scraping_logger.exception(f"Error in parsing webpage: {e}\n\n")
+                    section_content = parse_html(soup, search_tag, search_attrs, search_methods)
+                    assert type(section_content) in [Tag, ResultSet]
+                except AssertionError:
+                    web_scraping_logger.exception(f"\n\nNo content could be retrieved for '{segment}' using provided search parameters.")
+                    html_sections[segment] = None
                 else:
-                    html_sections[segment] = chunk
+                    html_sections[segment] = section_content
 
         return html_sections
 
     @classmethod
-    def _transform_sections(cls, html_sections: Dict[str, Tag | ResultSet]) -> Dict[str, str | List[pd.DataFrame]]:
-
+    def _transform_sections(cls, html_sections: Dict[str, Tag | ResultSet | None]) -> Dict[str, str | pd.DataFrame | None]:
         """
         Converts BeautifulSoup objects into strings (from <p> tags) and Pandas DataFrames (from <table> tags), and stores the results in a dictionary.
         Args:
@@ -143,26 +152,53 @@ class ManufacturingPmi:
         transformed_sections = {}
 
         for key, value in html_sections.items():
-            if isinstance(value, ResultSet) and all([t.name == 'table' for t in value]):
-                transformed_sections[key] = custom_table_to_df(value)
+            if not value:
+                transformed_sections[key] = None
+                continue
+            
+            if 'table' in key:
+                df_list = custom_table_to_df(value)
+
+                # No processing on main overview table
+                if key == 'full_pmi_table':
+                    df = df_list[0]
+
+                # Process other tables to add Year and Month columns; combine multiple tables per section into one
+                else:
+                    for df in df_list:
+                        if key == 'buying_policy_table': df.insert(0, 'Category', df.index.name)
+                        dates = pd.to_datetime(df.index, format='%b %Y').to_series()
+                        df.insert(0, 'Month', dates.dt.month_name())
+                        df.insert(0, 'Year', dates.dt.year)
+                        df = df.reset_index(drop=True)
+                    df = pd.concat(df_list)                     
+                
+                transformed_sections[key] = df
+
             else:
                 transformed_sections[key] = p_to_str(value)
         
-        transformed_sections['industry_rankings'] = cls._rankings(transformed_sections['overview'], transformed_sections['new_orders_text'])
-        transformed_sections['respondents'] = cls._respondents_say(transformed_sections['comments'])
+        if 'overview' in transformed_sections and 'new_orders_text' in transformed_sections:
+            transformed_sections['industry_rankings'] = cls._rankings(transformed_sections['overview'], transformed_sections['new_orders_text'])
+        else:
+            transformed_sections['industry_rankings'] = None
+        
+        if 'comments' in transformed_sections:
+            transformed_sections['respondents'] = cls._respondents_say(transformed_sections['comments'])
+        else:
+            transformed_sections['respondents'] = None
 
         return transformed_sections
     
     @classmethod
     def _rankings(cls, overview: str, new_orders_text: str) -> pd.DataFrame:
-
         """
-        Ranks the sectors based on the growth/contraction in the PMI and new orders.
+        Ranks the sectors based on the growth/contraction in the PMI and new-orders.
         Args:
             overview (str): The report overview which contains a list of growing and contracting sectors.
             new_orders_text (str): The text under the "new orders" section which contains a list of growing and contracting sectors.
         Returns:
-            pd.DataFrame: A Pandas DataFrame containing the PMI and new orders rankings for each sector.
+            pd.DataFrame: A Pandas DataFrame containing the PMI and new-orders rankings for each sector.
         """
 
         # Initiate empty dataframe with sectors as index
@@ -203,8 +239,7 @@ class ManufacturingPmi:
         return df
     
     @classmethod
-    def _respondents_say(cls, comments: str) -> pd.DataFrame:
-        
+    def _respondents_say(cls, comments: str) -> pd.DataFrame:  
         """
         Extracts the comments from the respondents and stores them in a Pandas DataFrame.
         Args:
@@ -229,9 +264,21 @@ class ManufacturingPmi:
     
 #%%
 class ServicesPmi:
-
     """
     Represents an ISM Services PMI report.
+
+    Attributes:
+        sectors: A list of services sectors.
+        _html_content: The HTML content of the webpage as string.
+        _html_sections: A namedtuple containing the BeautifulSoup objects for relevant report sections.
+        _sections: A namedtuple containing the relevant report sections in str or Pandas DataFrame formats.
+    
+    Methods:
+        download: Downloads the Services PMI report from the ISM website. Defaults to the latest report.
+        _parse_html: Parses the HTML content of the Manufacturing PMI report and extracts relevant sections.
+        _transform_sections: Transforms the extracted HTML sections into strings (text) and Pandas DataFrames (tables).
+        _rankings: Ranks the manufacturing sectors based on the growth or contraction.
+        _respondents_say: Extracts the comments from the respondents and stores them in a Pandas DataFrame.
     """
 
     sectors = ["Accommodation & Food Services", "Agriculture, Forestry, Fishing & Hunting", "Arts, Entertainment & Recreation", "Construction",
@@ -240,12 +287,9 @@ class ServicesPmi:
                "Transportation & Warehousing", "Utilities", "Wholesale Trade"]
 
     def __init__(self, html_content: str, html_sections: NamedTuple, sections: NamedTuple) -> None:
-
         """
-        Initializes a ServicesPmi object. Attributes are private, accessible through getter methods, to prevent assignment. Attributes are of immutable types to prevent modification.
+        Initializes a ServicesPmi object. Attributes are private, accessible through getter methods, to prevent assignment.
         Args:
-            url (str): The url of the webpage from which the report is obtained.
-            access_date (datetime): The date and time when the report was accessed.
             html_content (str): The HTML content of the webpage.
             html_sections (namedtuple): A namedtuple containing the HTML for relevant report sections.
             sections (namedtuple): A namedtuple containing the relevant report sections in str or Pandas DataFrame formats (derived from processing html_sections).
@@ -268,8 +312,7 @@ class ServicesPmi:
         return self._sections
     
     @classmethod
-    def web_extract(cls, url: str | None = None) -> ServicesPmi | None:
-
+    def download(cls, url: str | None = None) -> ServicesPmi | None:
         """
         Extracts and transforms HTML from a webpage, and calls the constructor to create a ServicesPmi object.
         Args:
@@ -308,19 +351,18 @@ class ServicesPmi:
             return cls(html_content, html_sections_nt, sections_nt)
         
         except Exception as e:
-            web_scraping_logger.exception(f"Failed to fetch the ISM Services PMI webpage: {url}\nError: {e}\n\n")
+            web_scraping_logger.exception(f"\n\nFailed to fetch the ISM Services data from: {url}\nError: {e}")
             return None
 
     @classmethod
-    def _parse_html(cls, html_content: str) -> Dict[str, Tag | ResultSet]:
-
+    def _parse_html(cls, html_content: str) -> Dict[str, Tag | ResultSet | None]:
         """
         Parses the webpage HTML using BeautifulSoup. Locates and stores the HTML of relevant report sections in a dictionary.
         The relevant sections and how to locate them in the HTML are defined in the ism_pmi_report_structures module.
         Args:
             html_content (str): The HTML of the webpage.
         Returns:
-            dict[str, Tag | ResultSet]: A dictionary containing the BeautifulSoup objects for relevant report sections:
+            dict[str, Tag | ResultSet]: A dictionary containing the BeautifulSoup objects for relevant report sections.
         """
 
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -332,19 +374,18 @@ class ServicesPmi:
                 search_methods = search_formula['methods']
                 
                 try:
-                    chunk = parse_html(soup, search_tag, search_attrs, search_methods)
-                    if type(chunk) not in [Tag, ResultSet]:
-                        raise Exception(f"No content could be retrieved for '{segment}' using provided search parameters.")
-                except Exception as e:
-                    web_scraping_logger.exception(f"Error in parsing webpage: {e}\n\n")
+                    section_content = parse_html(soup, search_tag, search_attrs, search_methods)
+                    assert type(section_content) in [Tag, ResultSet]
+                except AssertionError:
+                    web_scraping_logger.exception(f"No content could be retrieved for '{segment}' using provided search parameters.")
+                    html_sections[segment] = None
                 else:
-                    html_sections[segment] = chunk
+                    html_sections[segment] = section_content
 
         return html_sections
 
     @classmethod
-    def _transform_sections(cls, html_sections: Dict[str, Tag | ResultSet]) -> Dict[str, str | List[pd.DataFrame]]:
-
+    def _transform_sections(cls, html_sections: Dict[str, Tag | ResultSet | None]) -> Dict[str, str | pd.DataFrame | None]:
         """
         Converts BeautifulSoup objects into strings (from <p> tags) and Pandas DataFrames (from <table> tags), and stores the results in a dictionary.
         Args:
@@ -356,27 +397,52 @@ class ServicesPmi:
         transformed_sections = {}
         
         for key, value in html_sections.items():
-            if isinstance(value, ResultSet) and all([t.name == 'table' for t in value]):
-                transformed_sections[key] = custom_table_to_df(value)
-            
+            if not value:
+                transformed_sections[key] = None
+                continue
+
+            if 'table' in key:
+                df_list = custom_table_to_df(value)
+
+                # No processing on main overview table
+                if key == 'full_pmi_table':
+                    df = df_list[0]
+
+                # Process other tables to add Year and Month columns; combine multiple tables per section into one
+                else:
+                    for df in df_list:
+                        dates = pd.to_datetime(df.index, format='%b %Y').to_series()
+                        df.insert(0, 'Month', dates.dt.month_name())
+                        df.insert(0, 'Year', dates.dt.year)
+                        df = df.reset_index(drop=True)
+                    df = pd.concat(df_list)
+                
+                transformed_sections[key] = df
+
             else:
                 transformed_sections[key] = p_to_str(value)
         
-        transformed_sections['industry_rankings'] = cls._rankings(transformed_sections['overview'], transformed_sections['business_activity_text'])
-        transformed_sections['respondents'] = cls._respondents_say(transformed_sections['comments'])
+        if 'overview' in transformed_sections and 'business_activity_text' in transformed_sections:
+            transformed_sections['industry_rankings'] = cls._rankings(transformed_sections['overview'], transformed_sections['business_activity_text'])
+        else:
+            transformed_sections['industry_rankings'] = None
+        
+        if 'comments' in transformed_sections:
+            transformed_sections['respondents'] = cls._respondents_say(transformed_sections['comments'])
+        else:
+            transformed_sections['respondents'] = None
 
         return transformed_sections
     
     @classmethod
     def _rankings(cls, overview: str, business_activity_text: str) -> pd.DataFrame:
-        
         """
-        Ranks the sectors based on the growth/contraction in the PMI and business activity.
+        Ranks the sectors based on the growth/contraction in the PMI and business-activity.
         Args:
             overview (str): The report overview which contains a list of growing and contracting sectors.
             business_activity_text (str): The text under the "business activity" section which contains a list of growing and contracting sectors.
         Returns:
-            pd.DataFrame: A Pandas DataFrame containing the PMI and business activity rankings for each sector.
+            pd.DataFrame: A Pandas DataFrame containing the PMI and business-activity rankings for each sector.
         """
 
         # Initiate empty dataframe with sectors as index
@@ -418,7 +484,6 @@ class ServicesPmi:
     
     @classmethod
     def _respondents_say(cls, comments: str) -> pd.DataFrame:
-        
         """
         Extracts the comments from the respondents and stores them in a Pandas DataFrame.
         Args:
@@ -443,9 +508,15 @@ class ServicesPmi:
     
     #%%
 class ConsumerSurvey:
-
     """
-    A class to represent the US Michigan Consumer Survey.
+    A class to represent the US Michigan Consumer Survey data.
+
+    Attributes:
+        data: A Pandas DataFrame containing the consumer survey data with columns for Year, Month, Index, Current Index, and Expected Index.
+    
+    Methods:
+        download: Downloads the US Michigan Consumer Survey data; reads CSVs into DataFrames; returns a processed DataFrame.
+        _process_df: Processes the raw DataFrames from the downloaded CSV files, merging them into one.
     """
 
     def __init__(self, data: pd.DataFrame) -> None:
@@ -456,7 +527,7 @@ class ConsumerSurvey:
         return self._data.copy(deep=True)
     
     @classmethod
-    def web_extract(cls) -> ConsumerSurvey | None:
+    def download(cls) -> ConsumerSurvey | None:
         
         # Fetch the US Michigan Consumer Index, and the Current and Expected Components
         index_url = "https://www.sca.isr.umich.edu/files/tbcics.csv"
@@ -467,7 +538,8 @@ class ConsumerSurvey:
             response_components = session.get(components_url)
         
         try:
-            assert response_index and response_components
+            assert response_index
+            assert response_components
             # Wrap response string in file-like object for read_csv
             df1 = pd.read_csv(io.StringIO(response_index.text), sep=",", skiprows=4)
             df2 = pd.read_csv(io.StringIO(response_components.text), sep=",", skiprows=4)
@@ -476,19 +548,19 @@ class ConsumerSurvey:
             return cls(data)
         
         except Exception as e:
-            web_scraping_logger.exception(f'Failed to fetch the Consumer Survey data from: {index_url or components_url}{" and " + (components_url or index_url) if (index_url and components_url) else ""}\nError: {e}\n\n')
+            web_scraping_logger.exception(f'\n\nFailed to fetch the Consumer Survey data.\nError: {e}')
             return None
     
     @classmethod
     def _process_df(cls, df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
         # Drop empty columns and rows; define column names and data types
-        df1.dropna(axis=1, how='all', inplace=True)
-        df1.dropna(axis=0, how='all', inplace=True)
+        df1 = df1.dropna(axis=1, how='all')
+        df1 = df1.dropna(axis=0, how='all')
         df1.columns = ["Month", "Year", "Index"]
         df1 = df1.astype({"Month": 'string', "Year": int, "Index": 'Float64'})
         
-        df2.dropna(axis=1, how='all', inplace=True)
-        df2.dropna(axis=0, how='all', inplace=True)
+        df2 = df2.dropna(axis=1, how='all')
+        df2 = df2.dropna(axis=0, how='all')
         df2.columns = ["Month", "Year", "Current Index", "Expected Index"]
         df2 = df2.astype({"Month": 'string', "Year": int, "Current Index": 'Float64', "Expected Index": 'Float64'})
 
@@ -500,9 +572,15 @@ class ConsumerSurvey:
 
 #%%
 class ConstructionSurvey:
-
     """
-    A class to represent the US Census Bureau Construction Survey.
+    A class to represent the US Census Bureau Construction Survey data.
+
+    Attributes:
+        data: A Pandas DataFrame containing the construction survey data with columns for Year, Month, Permits, Authorized, Starts, Under Construction, and Completions.
+
+    Methods:
+        download: Downloads the US Census Bureau Construction Survey data; reads Excel files into DataFrames; returns a processed DataFrame.
+        _process_df: Processes the raw DataFrames from the downloaded Excel files, merging them into one.
     """
 
     def __init__(self, data: pd.DataFrame) -> None:
@@ -513,69 +591,70 @@ class ConstructionSurvey:
         return self._data.copy(deep=True)
     
     @classmethod
-    def web_extract(cls) -> ConstructionSurvey | None:
+    def download(cls) -> ConstructionSurvey | None:
         
         # Fetch the US Census Bureau Construction Survey data
-        url = "https://www.census.gov/construction/nrc/xls/newresconst.xlsx"
+        permit_url = "https://www.census.gov/construction/nrc/xls/permits_cust.xlsx"
+        auth_url = "https://www.census.gov/construction/nrc/xls/authnot_cust.xlsx"
+        start_url = "https://www.census.gov/construction/nrc/xls/starts_cust.xlsx"
+        construct_url = "https://www.census.gov/construction/nrc/xls/under_cust.xlsx"
+        complete_url = "https://www.census.gov/construction/nrc/xls/comps_cust.xlsx"
 
         with WebSession() as session:
-            response = session.get(url)
+            response_permit = session.get(permit_url)
+            response_auth = session.get(auth_url)
+            response_start = session.get(start_url)
+            response_construct = session.get(construct_url)
+            response_complete = session.get(complete_url)
 
         try:
-            assert response
-            # Wrap response content in file-like object to process the excel file
-            xl = pd.ExcelFile(io.BytesIO(response.content))  
-            data = cls._process_df(xl)
-            return cls(data)
+            assert response_permit
+            assert response_auth
+            assert response_start
+            assert response_construct
+            assert response_complete
+
+            response_list = [response_permit, response_auth, response_start, response_construct, response_complete]
+            xl_list = [pd.ExcelFile(io.BytesIO(response.content)) for response in response_list]
+            df_list = [cls._process_df(xl) for xl in xl_list]
+            
+            df_list = [df.rename(columns={'Total': f'Total_{i+1}'}) for i, df in enumerate(df_list)]
+            merged_df = reduce(lambda left, right: pd.merge(left, right, on=['Year', 'Month'], how='outer'), df_list)
+            merged_df.columns = ['Year', 'Month', 'Permits', 'Authorized', 'Starts', 'Under Construction', 'Completions']
+            
+            merged_df['Month_num'] = pd.to_datetime(merged_df['Month'], format='%B').dt.month
+            merged_df = merged_df.sort_values(by=['Year', 'Month_num']).drop(columns='Month_num').reset_index(drop=True)
+            
+            return cls(merged_df)
         
         except Exception as e:
-            web_scraping_logger.exception(f"Failed to fetch the Construction Survey data from: {url}\nError: {e}\n\n")
+            web_scraping_logger.exception(f"\n\nFailed to fetch the Construction Survey data.\nError: {e}")
             return None
         
     @classmethod
     def _process_df(cls, xl: pd.ExcelFile) -> pd.DataFrame:
-        # Parse first sheet to extract months
-        df = xl.parse(0)
-        first_col = df.iloc[:, 0].astype('string')
+        df = xl.parse(sheet_name='Seasonally Adjusted', header=5, usecols='A:B')
+        df = df.dropna(axis=0, how='any')
+        df.columns = ['Date', 'Total']
+        df['Date'] = pd.to_datetime(df['Date'])
+        df.insert(0, 'Month', df['Date'].dt.month_name())
+        df.insert(0, 'Year', df['Date'].dt.year)
+        df = df.drop(columns=['Date'])
+        df = df.astype({'Year': int, 'Month': 'string', 'Total': 'Float64'})
 
-        # Get prev year and current year from first column
-        pattern = r'^([0-9]{4})'
-        years = first_col.str.extract(pattern).dropna()[0:2]
-        prev_year = int(years.squeeze().iloc[0])
-        curr_year = int(years.squeeze().iloc[1])
-
-        # Get month names from first column
-        pattern = r'(January|February|March|April|May|June|July|August|September|October|November|December)'
-        months = first_col.str.extract(pattern).dropna()[0:13]
-        months.reset_index(drop=True, inplace=True)
-
-        # Create dataframe
-        df = pd.DataFrame(months).astype('string')
-        df.columns = ["Month"]
-
-        # Add year column; detect where year changes (December -> January)
-        year_change_bool = (df["Month"] == "December") & (df["Month"].shift(-1) == "January")
-        year_change_idx = year_change_bool[year_change_bool].index[0]
-        year_col = [prev_year for i in range(0, year_change_idx + 1)] + [curr_year for i in range(year_change_idx + 1, len(df))]
-        df.insert(0, "Year", year_col)
-        df["Year"] = df["Year"].astype(int)
-
-        # Copy dataframe; extract data columns from other sheets and add to dataframe
-        data = df.copy()
-        for name in xl.sheet_names:
-            df = xl.parse(name)
-            df.dropna(inplace=True)
-            df.reset_index(drop=True, inplace=True)
-            data_series = df.iloc[0:13, 1].astype('Float64')
-            data[f"Total {name.split(' - ')[1]}"] = data_series
-
-        return data
+        return df
     
 #%%
 class EuroSurvey:
-
     """
-    A class to represent the EU Economic Survey.
+    A class to represent the EU Economic Survey data.
+    
+    Attributes:
+        data: A Pandas DataFrame containing the EU Economic Survey data with columns for Year, Month, and various economic indicators per country.
+    
+    Methods:
+        download: Downloads the EU Economic Survey data; reads the Excel file into a DataFrame; returns a processed DataFrame.
+        _process_df: Processes the raw DataFrame from the downloaded Excel file, adding Year and Month columns.
     """
 
     def __init__(self, data: pd.DataFrame) -> None:
@@ -586,7 +665,7 @@ class EuroSurvey:
         return self._data.copy(deep=True)
     
     @classmethod
-    def web_extract(cls) -> EuroSurvey | None:
+    def download(cls) -> EuroSurvey | None:
         
         # Fetch the EU Economic Survey data
         url = "https://ec.europa.eu/economy_finance/db_indicators/surveys/documents/series/nace2_ecfin_2504/main_indicators_sa_nace2.zip"
@@ -608,14 +687,11 @@ class EuroSurvey:
             return cls(data)
         
         except Exception as e:
-            web_scraping_logger.exception(f"Failed to fetch the EU Economic Survey data from: {url}\nError: {e}\n\n")
+            web_scraping_logger.exception(f"\n\nFailed to fetch the EU Economic Survey data from:{url}\nError: {e}")
             return None
         
     @classmethod
     def _process_df(cls, df: pd.DataFrame) -> pd.DataFrame:
-        # Drop empty columns
-        df.dropna(axis=1, how='all', inplace=True)
-
         # Rename first column to Date
         df.columns.values[0] = "Date"
 
@@ -627,17 +703,26 @@ class EuroSurvey:
         df.insert(2, "Month", df["Date"].dt.month.apply(lambda x: months_list[x - 1]))
         df["Month"] = df["Month"].astype('string')
 
-        # Format dates and set all numerical columns to float type
-        df["Date"] = df["Date"].dt.strftime("%d-%m-%Y")
+        # Drop "unnamed" and "date" columns
+        df = df.loc[:, ~df.columns.str.contains('unnamed', case=False)]
+        df = df.drop(columns=["Date"])
+
+        # Set all numerical columns to float type
         df.iloc[:, 3:] = df.iloc[:, 3:].astype('float64')
 
         return df
 
 #%%
-class CaixinPmi:
-
+class CaixinManufacturingPmi:
     """
-    A class to represent the Caixin PMI from Trading Economics.
+    A class to represent the Caixin Manufacturing PMI data from Trading Economics.
+    
+    Attributes:
+        data: A Pandas DataFrame containing the Caixin Manufacturing PMI data with columns for Year, Month, and Manufacturing PMI index.
+    
+    Methods:
+        download: Downloads the text from the Caixin Manufacturing PMI page from Trading Economics and processes it into a DataFrame.
+        _parse_text: Parses the text to extract the Manufacturing PMI index, month, and year.
     """
 
     def __init__(self, data: pd.DataFrame) -> None:
@@ -648,81 +733,90 @@ class CaixinPmi:
         return self._data.copy(deep=True)
     
     @classmethod
-    def web_extract(cls) -> CaixinPmi | None:
+    def download(cls) -> CaixinManufacturingPmi | None:
 
-        # Fetch the Caixin manufacturing and services PMI data
-        man_url = "https://tradingeconomics.com/china/manufacturing-pmi"
-        ser_url = "https://tradingeconomics.com/china/services-pmi"
-
+        url = "https://tradingeconomics.com/china/manufacturing-pmi"
         with WebSession() as session:
-            response_manufacturing = session.get(man_url)
-            response_services = session.get(ser_url)
+            response = session.get(url)
 
         try:
-            assert response_manufacturing and response_services
-            # Find relevant html tags and obtain text
-            man_text = BeautifulSoup(response_manufacturing.text, 'html.parser').find(id="description").text
-            ser_text = BeautifulSoup(response_services.text, 'html.parser').find(id="description").text
+            assert response
+            text = BeautifulSoup(response.text, 'html.parser').find(id="description").text
 
-            # Parse text to obtain current and last month's indices
-            man_data = cls._parse_html(man_text)
-            ser_data = cls._parse_html(ser_text)
+            index, month, year = cls._parse_text(text)
 
-            # Create dataframe
-            data = [man_data["prev_year"], man_data["prev_month"], man_data["prev_index"], ser_data["prev_index"]], [man_data["year"], man_data["month"], man_data["index"], ser_data["index"]]
-            data = pd.DataFrame(data, columns=["Year", "Month", "Manufacturing PMI", "Services PMI"])
-            data = data.astype({"Year": int, "Month": 'string', "Manufacturing PMI": 'Float64', "Services PMI": 'Float64'})
+            df = pd.DataFrame([[year, month, index]], columns=["Year", "Month", "Manufacturing PMI"])
+            df = df.astype({"Year": int, "Month": 'string', "Manufacturing PMI": 'Float64'})
 
-            return cls(data)
+            return cls(df)
         
         except Exception as e:
-            web_scraping_logger.exception(f'Failed to fetch the Caixin PMI data from: {man_url or ser_url}{" and " + (ser_url or man_url) if (man_url and ser_url) else ""}\nError: {e}\n\n')
+            web_scraping_logger.exception(f'\n\nFailed to fetch the Caixin Manufacturing PMI data from: {url}\nError: {e}')
             return None
         
     @staticmethod
-    def _parse_html(text: str) -> Dict[str, str | int | float]:
+    def _parse_text(text: str) -> Tuple[str, str, str]:
+        return re.findall(r"(\d{2}(?:\.\d{1,2})?) in ([A-Za-z]+) (\d{4})", text)[0]
 
-        # Get PMI index, current month and current year
-        index, month, year  = re.findall(r"(\d{2}(?:\.\d{1,2})?) in ([A-Za-z]+) (\d{4})", text)[0]
+#%%
+class CaixinServicesPmi:
+    """
+    A class to represent the Caixin Services PMI data from Trading Economics.
+    
+    Attributes:
+        data: A Pandas DataFrame containing the Caixin Services PMI data with columns for Year, Month, and Services PMI index.
+    
+    Methods:
+        download: Downloads the text from the Caixin Services PMI page from Trading Economics and processes it into a DataFrame.
+        _parse_text: Parses the text to extract the Services PMI index, month, and year.
+    """
 
-        # Get previous index value
-        pattern = (
-            r"(?<!expectations of )"
-            r"(?<!expectation of )"
-            r"(?<!forecasts of )"
-            r"(?<!forecast of )"
-            r"(?<!estimates of )"
-            r"(?<!estimate of )"
-            r"(?<!projections of )"
-            r"(?<!projection of )"
-            r"(?<!predictions of )"
-            r"(?<!prediction of )"
-            r"(?<!\d{1})"
-            r"(?<!\d{2})"
-            r"(?<!January )(?<!February )(?<!March )(?<!April )"
-            r"(?<!May )(?<!June )(?<!July )(?<!August )"
-            r"(?<!September )(?<!October )(?<!November )(?<!December )"
-            r"(\d{2}(?:\.\d{1,2})?)"
-        )
-        prev_index = re.findall(pattern, text)[1]
+    def __init__(self, data: pd.DataFrame) -> None:
+        self._data = data.copy(deep=True)
 
-        # Get previous month and year
-        months_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-        prev_month = months_list[months_list.index(month) - 1]
-        year = int(year)
-        if prev_month == "December":
-            prev_year = year - 1
-        else:
-            prev_year = year
+    @property
+    def data(self) -> pd.DataFrame:
+        return self._data.copy(deep=True)
+    
+    @classmethod
+    def download(cls) -> CaixinServicesPmi | None:
 
-        return {"index": index, "month": month, "year": year, "prev_index": prev_index, "prev_month": prev_month, "prev_year": prev_year}
+        url = "https://tradingeconomics.com/china/services-pmi"
+        with WebSession() as session:
+            response = session.get(url)
+
+        try:
+            assert response
+            text = BeautifulSoup(response.text, 'html.parser').find(id="description").text
+
+            index, month, year = cls._parse_text(text)
+
+            df = pd.DataFrame([[year, month, index]], columns=["Year", "Month", "Services PMI"])
+            df = df.astype({"Year": int, "Month": 'string', "Services PMI": 'Float64'})
+
+            return cls(df)
+        
+        except Exception as e:
+            web_scraping_logger.exception(f'\n\nFailed to fetch the Caixin Services PMI data from: {url}\nError: {e}')
+            return None
+        
+    @staticmethod
+    def _parse_text(text: str) -> Tuple[str, str, str]:
+        return re.findall(r"(\d{2}(?:\.\d{1,2})?) in ([A-Za-z]+) (\d{4})", text)[0]
     
 #%%
 class FinvizSreener:
-
     """
     A class to represent the Finviz Stock Screener.
+
+    Attributes:
+        data: A Pandas DataFrame containing the stock screener data with various columns for financial metrics.
+
+    Methods:
+        download: Downloads the Finviz Stock Screener tabular data and processes it into a DataFrame.
+        _process_df: Processes the raw DataFrame from the downloaded HTML, converting columns to appropriate types and handling numerical suffixes.
     """
+
     _col_nums = [1, 2, 79, 3, 4, 5, 129, 6, 7, 8, 9, 10, 11, 12, 13, 73, 74, 75, 14, 130, 131, 15, 16, 77, 17, 18, 19, 20, 21, 23, 22, 132, 133, 82, 78, 127, 128,
                  24, 25, 85, 26, 27, 28, 29, 30, 31, 84, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58,
                  134, 125, 126, 59, 68, 70, 80, 83, 76, 60, 61, 62, 63, 64, 67, 69, 81, 86, 87, 88, 65, 66]
@@ -737,9 +831,9 @@ class FinvizSreener:
         return self._data.copy(deep=True)
     
     @classmethod
-    def web_extract(cls, num_rows: int | None = None, view_col_nums: List[int] | None = None) -> FinvizSreener | None:
+    def download(cls, num_rows: int | None = None, view_col_nums: List[int] | None = None) -> FinvizSreener | None:
 
-        # Define url for viewing all columns
+        # Define url for viewing all columns; all downloaded and later filtered to show only selected columns
         url = "https://finviz.com/screener.ashx?v=151&f=ind_stocksonly&o=ticker&c=" + (',').join([str(i) for i in cls._col_nums])
         
         # Set default values and check input types
@@ -780,7 +874,7 @@ class FinvizSreener:
                         df = pd.concat([df, df_i], ignore_index=True)
 
                 except Exception as e:
-                    web_scraping_logger.exception(f'Failed to fetch the Finviz Stock Screener data from: {url}\nError: {e}\n\n')
+                    web_scraping_logger.exception(f'\n\nFailed to fetch the Finviz Stock Screener data from: {url}\nError: {e}')
                     return None
 
         try:
@@ -793,7 +887,7 @@ class FinvizSreener:
             data = data[view_col_names]
 
         except Exception as e:
-            web_scraping_logger.exception(f"Failed to fetch the Finviz Stock Screener data from: {url}\nError: {e}\n\n")
+            web_scraping_logger.exception(f"\n\nFailed to fetch the Finviz Stock Screener data from: {url}\nError: {e}")
             return None
 
         return cls(data)
@@ -808,7 +902,7 @@ class FinvizSreener:
         updated_cols = list(df.columns)
 
         #Drop duplicate rows
-        df.drop_duplicates(inplace=True)
+        df = df.drop_duplicates()
 
         # Detect cols with real number followed by M, B, or K suffixes
         pattern = r'(?<=\d\.\d{2})[MBK]'
@@ -835,7 +929,7 @@ class FinvizSreener:
 
             # Eliminate suffixes, empty strings, and "non-float characters"
             pattern = {r'(?<=\d\.\d{2})[MBK]': '', r'[^0-9eE\.\+\-]': '', r'^(-)?$': pd.NA}
-            df[col].replace(pattern, regex=True, inplace=True)
+            df[col] = df[col].replace(pattern, regex=True)
 
             # Convert to float and multiply by scale factor
             df[col] = df[col].astype('Float64') * scale
@@ -848,9 +942,9 @@ class FinvizSreener:
 
             # Eliminate empty strings, and "non-float characters"
             pattern = {r'[^0-9eE\.\+\-]': '', r'^(-)?$': pd.NA}
-            df[col].replace(pattern, regex=True, inplace=True)
+            df[col] = df[col].replace(pattern, regex=True)
 
-            # Convert to float and multiply by scale factor
+            # Convert to float
             df[col] = df[col].astype('Float64')
 
             # Adjust column names
@@ -865,7 +959,7 @@ class FinvizSreener:
     
             # Eliminate /a and /b symbols; eliminate empty strings and hyphens
             pattern = {r'/[ab]': '', r'^(-)?$': pd.NA}
-            df[col].replace(pattern, regex=True, inplace=True)
+            df[col] = df[col].replace(pattern, regex=True)
 
             # Convert to datetime
             if col == "Earnings":
@@ -878,14 +972,14 @@ class FinvizSreener:
     
             # Eliminate empty strings, and "non-float characters"
             pattern = {r'[^0-9eE\.\+\-]': '', r'^(-)?$': pd.NA}
-            df[col].replace(pattern, regex=True, inplace=True)
+            df[col] = df[col].replace(pattern, regex=True)
 
             # Convert to float
             df[col] = df[col].astype('Float64')
 
         # Eliminate empty strings and hyphens from remaining (string type)columns
         pattern = {r'^(-)?$': pd.NA}
-        df.replace(pattern, regex=True, inplace=True)
+        df = df.replace(pattern, regex=True)
 
         # Update column names
         df.columns = updated_cols
@@ -894,6 +988,23 @@ class FinvizSreener:
 
 #%%
 class MarketData:
+    """
+    A class to represent market data from Trading Economics, including commodities, stocks, bonds, currencies, and cryptocurrencies.
+    
+    Attributes:
+        commodities: An instance of the Commodities class containing commodity data.
+        stocks: An instance of the Stocks class containing stock data.
+        bonds: An instance of the Bonds class containing bond data.
+        currencies: An instance of the Currencies class containing currency data.
+        crypto: An instance of the Crypto class containing cryptocurrency data.
+    
+    Methods:
+        download: Downloads market data from Trading Economics for commodities, stocks, bonds, currencies, and cryptocurrencies; returns constructed sub-classes to MarketData constructor
+        _main: Fetches the HTML tables from Trading Economics and processes them into a dictionary of Pandas DataFrames.
+        _clean_df: Cleans a DataFrame by dropping unwanted/empty columns, removing unwanted characters, converting data types and renaming columns.
+        _split_units: For commodities only; splits the first column of the DataFrames into separate "item" and "units" columns.
+        _combine_dfs: Combines a list of DataFrames into a single DataFrame.
+    """
 
     def __init__(self, commodities: Commodities | None, stocks: Stocks | None, bonds: Bonds | None, currencies: Currencies | None, crypto: Crypto | None) -> None:
         if commodities: self._commodities = commodities
@@ -924,7 +1035,7 @@ class MarketData:
         
 
     @classmethod
-    def web_extract(cls) -> MarketData:
+    def download(cls) -> MarketData:
         
         # Commodities
         data = cls._main(url='https://tradingeconomics.com/commodities')
@@ -990,7 +1101,7 @@ class MarketData:
             return category_dict, all
 
         except Exception as e:
-            web_scraping_logger.exception(f"Failed to fetch data from Trading Economics: {url}\nError: {e}\n\n")
+            web_scraping_logger.exception(f"\n\nFailed to fetch data from Trading Economics: {url}\nError: {e}")
             return None
 
     @classmethod
@@ -998,17 +1109,18 @@ class MarketData:
         df_copy = df.copy()
 
         # Drop empty columns
-        df_copy.dropna(axis=1, how='all', inplace=True)
+        df_copy = df_copy.dropna(axis=1, how='all')
 
         # Eliminate %, $, commas and M suffixes
         pattern = {r'[%,$]': '', r'(?<=[0-9])M': ''}
-        df_copy.replace(pattern, regex=True, inplace=True)
+        df_copy = df_copy.replace(pattern, regex=True)
 
         # Drop Day column
-        df_copy.drop(columns=['Day'], errors='ignore', inplace=True)
+        df_copy = df_copy.drop(columns=['Day'], errors='ignore')
         
         # Rename columns, ignored if column not present in DataFrame
-        df_copy.rename(columns={'%': 'Day %', 'Weekly': 'Weekly %', 'Monthly': 'Monthly %', 'YTD': 'YTD %', 'YoY': 'YoY %', 'MarketCap': 'Market Cap (m USD)'}, inplace=True)
+        df_copy = df_copy.rename(columns={'%': 'Day %', 'Weekly': 'Weekly %', 'Monthly': 'Monthly %', 'YTD': 'YTD %', 
+                                          'YoY': 'YoY %', 'MarketCap': 'Market Cap (m USD)'})
         
         # Convert columns to float or string
         for col in df_copy.columns:
@@ -1053,6 +1165,13 @@ class MarketData:
         return df_combined
     
 class Commodities(MarketData):
+    """
+    A class to represent commodities data from Trading Economics.
+    
+    Attributes:
+        category_dict: A dictionary mapping commodity categories to their respective DataFrames.
+        all: A DataFrame containing all commodities data.
+    """
 
     def __init__(self, category_dict: Dict[str, pd.DataFrame], all: pd.DataFrame) -> None:
         self._all = all
@@ -1069,6 +1188,13 @@ class Commodities(MarketData):
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}' or no such category data.")
         
 class Stocks(MarketData):
+    """
+    A class to represent stock market data from Trading Economics.
+    
+    Attributes:
+        category_dict: A dictionary mapping stock market categories to their respective DataFrames.
+        all: A DataFrame containing all stocks data.
+    """
 
     def __init__(self, category_dict: Dict[str, pd.DataFrame], all: pd.DataFrame) -> None:
         self._all = all
@@ -1085,6 +1211,13 @@ class Stocks(MarketData):
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}' or no such category data.")
 
 class Bonds(MarketData):
+    """
+    A class to represent bond market data from Trading Economics.
+
+    Attributes:
+        category_dict: A dictionary mapping bond market categories to their respective DataFrames.
+        all: A DataFrame containing all bonds data.
+    """
 
     def __init__(self, category_dict: Dict[str, pd.DataFrame], all: pd.DataFrame) -> None:
         self._all = all
@@ -1101,6 +1234,13 @@ class Bonds(MarketData):
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}' or no such category data.")
         
 class Currencies(MarketData):
+    """
+    A class to represent currency data from Trading Economics.
+
+    Attributes:
+        category_dict: A dictionary mapping currency categories to their respective DataFrames.
+        all: A DataFrame containing all currencies data.
+    """
 
     def __init__(self, category_dict: Dict[str, pd.DataFrame], all: pd.DataFrame) -> None:
         self._all = all
@@ -1117,6 +1257,13 @@ class Currencies(MarketData):
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}' or no such category data.")
         
 class Crypto(MarketData):
+    """
+    A class to represent cryptocurrency data from Trading Economics.
+
+    Attributes:
+        category_dict: A dictionary mapping cryptocurrency categories to their respective DataFrames.
+        all: A DataFrame containing all cryptocurrencies data.
+    """
 
     def __init__(self, category_dict: Dict[str, pd.DataFrame], all: pd.DataFrame) -> None:
         self._all = all
