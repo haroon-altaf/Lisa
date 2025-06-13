@@ -122,7 +122,7 @@ class WebSession:
         self.session.close()
 
 #%%
-def parse_html(html_content: BeautifulSoup, search_tag: str, search_attrs: Dict[str, str] = {}, methods: List[Dict[str, str | Dict[str, str]]] = []) -> Tag | ResultSet:
+def find_content(html_content: BeautifulSoup, search_tag: str, search_attrs: Dict[str, str] = {}, methods: List[Dict[str, str | Dict[str, str]]] = []) -> Tag | ResultSet:
 
     """
     Extracts, from the full HTML content of a webpage obtained using BeautifulSoup, the HTML content of the relevant report sections.
