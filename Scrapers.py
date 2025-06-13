@@ -8,11 +8,11 @@ from enum import Enum
 from functools import reduce
 from helpers import find_content, p_to_str, custom_table_to_df, WebSession
 import io
-from ism_pmi_report_structures import Man_Pmi_Structure, Serv_Pmi_Structure
 from loggers import web_scraping_logger      
 import numpy as np                                                                                   
 import pandas as pd
 import re
+from static_data import Man_Pmi_Structure, Serv_Pmi_Structure, GICS_sector_industry_map
 from typing import List, Dict, NamedTuple, Tuple
 import zipfile
 
@@ -31,7 +31,8 @@ class Url(Enum):
     EURO = "https://ec.europa.eu/economy_finance/db_indicators/surveys/documents/series/nace2_ecfin_2504/main_indicators_sa_nace2.zip"
     CAIXIN_MAN_PMI = "https://tradingeconomics.com/china/manufacturing-pmi"
     CAIXIN_SER_PMI = "https://tradingeconomics.com/china/services-pmi"
-    FINVIZ_BASE = "https://finviz.com/screener.ashx?v=151&f=ind_stocksonly&o=ticker&c="
+    FINVIZ_SCREEN = "https://finviz.com/screener.ashx?v=151&f=ind_stocksonly&o=ticker&c="
+    FINVIZ_INDU = "https://finviz.com/groups.ashx?g=industry&v=152&o=name&c=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26"
     COMMODITIES = "https://tradingeconomics.com/commodities"
     STOCKS = "https://tradingeconomics.com/stocks"
     BONDS = "https://tradingeconomics.com/bonds"
@@ -823,92 +824,7 @@ class CaixinServicesPmi:
         return re.findall(r"(\d{2}(?:\.\d{1,2})?) in ([A-Za-z]+) (\d{4})", text)[0]
     
 #%%
-class FinvizSreener:
-    """
-    A class to represent the Finviz Stock Screener.
-
-    Attributes:
-        data: A Pandas DataFrame containing the stock screener data with various columns for financial metrics.
-
-    Methods:
-        download: Downloads the Finviz Stock Screener tabular data and processes it into a DataFrame.
-        _process_df: Processes the raw DataFrame from the downloaded HTML, converting columns to appropriate types and handling numerical suffixes.
-    """
-
-    _col_nums = [1, 2, 79, 3, 4, 5, 129, 6, 7, 8, 9, 10, 11, 12, 13, 73, 74, 75, 14, 130, 131, 15, 16, 77, 17, 18, 19, 20, 21, 23, 22, 132, 133, 82, 78, 127, 128,
-                 24, 25, 85, 26, 27, 28, 29, 30, 31, 84, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58,
-                 134, 125, 126, 59, 68, 70, 80, 83, 76, 60, 61, 62, 63, 64, 67, 69, 81, 86, 87, 88, 65, 66]
-    _default_col_nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 14 ,37, 42, 43, 44, 45, 46, 47, 48, 49, 52, 53, 68, 65]
-    _default_rows = 5500
-    
-    def __init__(self, data: pd.DataFrame) -> None:
-        self._data = data.copy(deep=True)
-
-    @property
-    def data(self) -> pd.DataFrame:
-        return self._data.copy(deep=True)
-    
-    @classmethod
-    def download(cls, num_rows: int | None = None, view_col_nums: List[int] | None = None) -> FinvizSreener | None:
-
-        # Define url for viewing all columns; all downloaded and later filtered to show only selected columns
-        url = Url.FINVIZ_BASE.value + (',').join([str(i) for i in cls._col_nums])
-        
-        # Set default values and check input types
-        if not num_rows: 
-            num_rows = cls._default_rows
-        else:
-            try:
-                num_rows = int(num_rows)
-            except ValueError:
-                raise ValueError("Number of rows must be an integer.")
-            
-        if view_col_nums == 'all':
-            view_col_nums = cls._col_nums
-        elif not view_col_nums or view_col_nums=='default':
-            view_col_nums = cls._default_col_nums
-        else:
-            try:
-                view_col_nums = [int(i) for i in view_col_nums]
-            except ValueError:
-                raise ValueError("Column numbers must be input as a list of integers.")
-
-        # Fetch the Finviz Stock Screener data
-        with WebSession() as session:
-            
-            # Finviz shows 20 rows per page; update url (increase r by steps of 20) to navigate through pages 
-            for count in range(1, num_rows, 20):
-                try:
-                    if count == 1:
-                        response = session.get(url)
-                        assert response
-                        df = pd.read_html(io.StringIO(response.text))[-2]
-
-                    elif count > 1:
-                        url = url + "&r=" + str(count)
-                        response = session.get(url)
-                        assert response
-                        df_i = pd.read_html(io.StringIO(response.text))[-2]
-                        df = pd.concat([df, df_i], ignore_index=True)
-
-                except Exception as e:
-                    web_scraping_logger.exception(f'\n\nFailed to fetch the Finviz Stock Screener data from: {url}\nError: {e}')
-                    return None
-
-        try:
-            # Process dataframe to ensure correct types and handling missing values
-            data = cls._process_df(df)
-
-            # Select subset of columns to view
-            num_name_dict = {num: name for num, name in zip(cls._col_nums, data.columns)}
-            view_col_names = [num_name_dict[i] for i in view_col_nums]
-            data = data[view_col_names]
-
-        except Exception as e:
-            web_scraping_logger.exception(f"\n\nFailed to fetch the Finviz Stock Screener data from: {url}\nError: {e}")
-            return None
-
-        return cls(data)
+class Finviz:
     
     @classmethod
     def _process_df(cls, df: pd.DataFrame) -> pd.DataFrame:
@@ -1004,6 +920,132 @@ class FinvizSreener:
 
         return df
 
+class FinvizSreener(Finviz):
+    """
+    A class to represent the Finviz Stock Screener.
+
+    Attributes:
+        data: A Pandas DataFrame containing the stock screener data with various columns for financial metrics.
+
+    Methods:
+        download: Downloads tabular data and processes it into a DataFrame.
+        _process_df: Processes the raw DataFrame from the downloaded HTML, converting columns to appropriate types and handling numerical suffixes.
+    """
+
+    _col_nums = [1, 2, 79, 3, 4, 5, 129, 6, 7, 8, 9, 10, 11, 12, 13, 73, 74, 75, 14, 130, 131, 15, 16, 77, 17, 18, 19, 20, 21, 23, 22, 132, 133, 82, 78, 127, 128,
+                 24, 25, 85, 26, 27, 28, 29, 30, 31, 84, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58,
+                 134, 125, 126, 59, 68, 70, 80, 83, 76, 60, 61, 62, 63, 64, 67, 69, 81, 86, 87, 88, 65, 66]
+    _default_col_nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 14 ,37, 42, 43, 44, 45, 46, 47, 48, 49, 52, 53, 68, 65]
+    _default_rows = 5500
+    
+    def __init__(self, data: pd.DataFrame) -> None:
+        self._data = data.copy(deep=True)
+
+    @property
+    def data(self) -> pd.DataFrame:
+        return self._data.copy(deep=True)
+    
+    @classmethod
+    def download(cls, num_rows: int | None = None, view_col_nums: List[int] | None = None) -> FinvizSreener | None:
+
+        # Define url for viewing all columns; all downloaded and later filtered to show only selected columns
+        url = Url.FINVIZ_SCREEN.value + (',').join([str(i) for i in cls._col_nums])
+        
+        # Set default values and check input types
+        if not num_rows: 
+            num_rows = cls._default_rows
+        else:
+            try:
+                num_rows = int(num_rows)
+            except ValueError:
+                raise ValueError("Number of rows must be an integer.")
+            
+        if view_col_nums == 'all':
+            view_col_nums = cls._col_nums
+        elif not view_col_nums or view_col_nums=='default':
+            view_col_nums = cls._default_col_nums
+        else:
+            try:
+                view_col_nums = [int(i) for i in view_col_nums]
+            except ValueError:
+                raise ValueError("Column numbers must be input as a list of integers.")
+
+        # Fetch the Finviz Stock Screener data
+        with WebSession() as session:
+            
+            # Finviz shows 20 rows per page; update url (increase r by steps of 20) to navigate through pages 
+            for count in range(1, num_rows, 20):
+                try:
+                    if count == 1:
+                        response = session.get(url)
+                        assert response
+                        df = pd.read_html(io.StringIO(response.text))[-2]
+
+                    elif count > 1:
+                        url = url + "&r=" + str(count)
+                        response = session.get(url)
+                        assert response
+                        df_i = pd.read_html(io.StringIO(response.text))[-2]
+                        df = pd.concat([df, df_i], ignore_index=True)
+
+                except Exception as e:
+                    web_scraping_logger.exception(f'\n\nFailed to fetch the Finviz Stock Screener data from: {url}\nError: {e}')
+                    return None
+
+        try:
+            # Process dataframe to ensure correct types and handling missing values
+            data = cls._process_df(df)
+
+            # Select subset of columns to view
+            num_name_dict = {num: name for num, name in zip(cls._col_nums, data.columns)}
+            view_col_names = [num_name_dict[i] for i in view_col_nums]
+            data = data[view_col_names]
+
+        except Exception as e:
+            web_scraping_logger.exception(f"\n\nFailed to fetch the Finviz Stock Screener data from: {url}\nError: {e}")
+            return None
+
+        return cls(data)
+    
+class FinvizIndustries(Finviz):
+    """
+    A class to represent the Finviz industries performance page.
+
+    Attributes:
+        data: A Pandas DataFrame containing the industry performance data.
+
+    Methods:
+        download: Downloads tabular data and processes it into a DataFrame.
+        _process_df: Processes the raw DataFrame from the downloaded HTML, converting columns to appropriate types and handling numerical suffixes.
+    """
+
+    def __init__(self, data: pd.DataFrame) -> None:
+        self._data = data.copy(deep=True)
+
+    @property
+    def data(self) -> pd.DataFrame:
+        return self._data.copy(deep=True)
+    
+    @classmethod
+    def download(cls) -> FinvizSreener | None:
+
+        url = Url.FINVIZ_INDU.value
+        with WebSession() as session:
+            response = session.get(url)
+
+        try:
+            assert response
+            df = pd.read_html(io.StringIO(response.text))[-2]
+            data = cls._process_df(df)
+            data = data.rename(columns={'Name': 'Industry'})
+            GICS_sector_industry_map_inverse = {industry: sector for sector, industries in GICS_sector_industry_map.items() for industry in industries}
+            data.insert(1, "Sector", data['Industry'].map(GICS_sector_industry_map_inverse))
+            return cls(data)
+
+        except Exception as e:
+            web_scraping_logger.exception(f'\n\nFailed to fetch the Finviz industry-level data from: {url}\nError: {e}')
+            return None     
+    
 #%%
 class MarketData:
     """
