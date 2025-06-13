@@ -1,36 +1,37 @@
 """
 Intro:
-This file contains information on how to find the relevant HTML sections in the ISM Manufactiring and Services PMI reports,
-using BeautifulSoup's .find() and other methods.
-The Man_Pmi_Structure dictionary contains information on navigating the manufacturing PMI reports.
-The Serv_Pmi_Structure dictionary contains information on navigating the services PMI reports.
-The function that uses these dictionaries is located in the helpers.py module.
+    This file contains static data in the form of dictionaries that is used elsewhere in the code (helpers.py and Scrapers.py).
 
-Structure of each dictionary:
-The keys in the dictionary are the names of the sections in the report.
-Each key has another dictionary as value, containing information of how to search for that section in the HTML structure.
-Each value dictionary has three keys: tag, attrs, and methods.
-The tag key contains the name of the HTML tag to search for using BeautifulSoup's .find() method (e.g., 'h1', 'h2', 'p').
-The attrs key contains the attributes of this HTML tag in the form of key: value pairs where keys are attribute names and values are attribute values, e.g., {'class_': 'text-center'}.
-The methods key contains a list of dictionaries, each dictionary containing information on what chain of methods to call after the first .find() method, in order to navigate to the target HTML content
-Each dictionary in the method list contains the method name to call, the tags to search for, and the attributes of that tag.
+    The Man_Pmi_Structure and Ser_Pmi_Structure dictionaries contain information on how to find the relevant HTML sections in the ISM Manufactiring and Services PMI reports,
+    using BeautifulSoup's .find() and other methods.
 
-Take the below key: value pair as an example:
-    'comm_price_up': {
-        'tag': 'h3',
-        'attrs': {'id': 'commodities'},
-        'methods': [
-            {'name': 'find_next_sibling', 'tag': 'div', 'attrs': {}},
-            {'name': 'findChild', 'tag': 'p', 'attrs': {}}
-        ]
-    }
+    The GICS_sector_industry_map is a dictionary that describes the sector-industry groupings as shown on Finviz (which is based on the Global Industry Classification Standard - GICS).
 
-This tells us that we need to find the <h3> tag with id='commodities' and then, find the next sibling with <div> tag, and then find the first child with <p> tag.
-target_html_tag = soup.find('h3', id='commodities').find_next_sibling('div').findChild('p')
+Details:
+    For the Map_Pmi_Structure and Ser_Pmi_Structure:
+    The keys in the dictionary are the names of the sections in the report.
+    Each key has another dictionary as value, containing information of how to search for that section in the HTML structure.
+    Each value dictionary has three keys: tag, attrs, and methods.
+    The tag key contains the name of the HTML tag to search for using BeautifulSoup's .find() method (e.g., 'h1', 'h2', 'p').
+    The attrs key contains the attributes of this HTML tag in the form of key: value pairs where keys are attribute names and values are attribute values, e.g., {'class_': 'text-center'}.
+    The methods key contains a list of dictionaries, each dictionary containing information on what chain of methods to call after the first .find() method, in order to navigate to the target HTML content
+    Each dictionary in the method list contains the method name to call, the tags to search for, and the attributes of that tag.
 
-Usage of these dictionaries:
-In the relevant module, these dictionaries are imported, and fed to a function (defined in helpers.py) that programmatically searches for the target HTML tags using the .find() and other methods from beautifulsoup.
-If there are any changes to the ISM reports' website struture, the dictionaries will need to be updated. However, no other code would need changing.
+    Take the below key: value pair as an example:
+        'comm_price_up': {
+            'tag': 'h3',
+            'attrs': {'id': 'commodities'},
+            'methods': [
+                {'name': 'find_next_sibling', 'tag': 'div', 'attrs': {}},
+                {'name': 'findChild', 'tag': 'p', 'attrs': {}}
+            ]
+        }
+
+    This tells us that we need to find the <h3> tag with id='commodities' and then, find the next sibling with <div> tag, and then find the first child with <p> tag.
+    target_html_tag = soup.find('h3', id='commodities').find_next_sibling('div').findChild('p')
+
+    In the relevant module, these dictionaries are imported, and fed to a function (defined in helpers.py) that programmatically searches for the target HTML tags using the .find() and other methods from beautifulsoup.
+    If there are any changes to the ISM reports' website struture, the dictionaries will need to be updated. However, no other code would need changing.
 """
 
 Man_Pmi_Structure = {
@@ -445,4 +446,152 @@ Serv_Pmi_Structure = {
             {'name': 'find_next_siblings', 'tag': 'table', 'attrs': {}}
         ]
     }
+}
+
+GICS_sector_industry_map = {
+    'Basic Materials': {   'Agricultural Inputs',
+                           'Aluminum',
+                           'Building Materials',
+                           'Chemicals',
+                           'Coking Coal',
+                           'Copper',
+                           'Gold',
+                           'Lumber & Wood Production',
+                           'Other Industrial Metals & Mining',
+                           'Other Precious Metals & Mining',
+                           'Paper & Paper Products',
+                           'Silver',
+                           'Specialty Chemicals',
+                           'Steel'},
+    'Communication Services': {   'Advertising Agencies',
+                                  'Broadcasting',
+                                  'Electronic Gaming & Multimedia',
+                                  'Entertainment',
+                                  'Internet Content & Information',
+                                  'Publishing',
+                                  'Telecom Services'},
+    'Consumer Cyclical': {   'Apparel Manufacturing',
+                             'Apparel Retail',
+                             'Auto & Truck Dealerships',
+                             'Auto Manufacturers',
+                             'Auto Parts',
+                             'Department Stores',
+                             'Footwear & Accessories',
+                             'Furnishings, Fixtures & Appliances',
+                             'Gambling',
+                             'Home Improvement Retail',
+                             'Internet Retail',
+                             'Leisure',
+                             'Lodging',
+                             'Luxury Goods',
+                             'Packaging & Containers',
+                             'Personal Services',
+                             'Recreational Vehicles',
+                             'Residential Construction',
+                             'Resorts & Casinos',
+                             'Restaurants',
+                             'Specialty Retail',
+                             'Textile Manufacturing',
+                             'Travel Services'},
+    'Consumer Defensive': {   'Beverages - Brewers',
+                              'Beverages - Non-Alcoholic',
+                              'Beverages - Wineries & Distilleries',
+                              'Confectioners',
+                              'Discount Stores',
+                              'Education & Training Services',
+                              'Farm Products',
+                              'Food Distribution',
+                              'Grocery Stores',
+                              'Household & Personal Products',
+                              'Packaged Foods',
+                              'Tobacco'},
+    'Energy': {   'Oil & Gas Drilling',
+                  'Oil & Gas E&P',
+                  'Oil & Gas Equipment & Services',
+                  'Oil & Gas Integrated',
+                  'Oil & Gas Midstream',
+                  'Oil & Gas Refining & Marketing',
+                  'Thermal Coal',
+                  'Uranium'},
+    'Financial': {   'Asset Management',
+                     'Banks - Diversified',
+                     'Banks - Regional',
+                     'Capital Markets',
+                     'Credit Services',
+                     'Financial Conglomerates',
+                     'Financial Data & Stock Exchanges',
+                     'Insurance - Diversified',
+                     'Insurance - Life',
+                     'Insurance - Property & Casualty',
+                     'Insurance - Reinsurance',
+                     'Insurance - Specialty',
+                     'Insurance Brokers',
+                     'Mortgage Finance',
+                     'Shell Companies'},
+    'Healthcare': {   'Biotechnology',
+                      'Diagnostics & Research',
+                      'Drug Manufacturers - General',
+                      'Drug Manufacturers - Specialty & Generic',
+                      'Health Information Services',
+                      'Healthcare Plans',
+                      'Medical Care Facilities',
+                      'Medical Devices',
+                      'Medical Distribution',
+                      'Medical Instruments & Supplies',
+                      'Pharmaceutical Retailers'},
+    'Industrials': {   'Aerospace & Defense',
+                       'Airlines',
+                       'Airports & Air Services',
+                       'Building Products & Equipment',
+                       'Business Equipment & Supplies',
+                       'Conglomerates',
+                       'Consulting Services',
+                       'Electrical Equipment & Parts',
+                       'Engineering & Construction',
+                       'Farm & Heavy Construction Machinery',
+                       'Industrial Distribution',
+                       'Infrastructure Operations',
+                       'Integrated Freight & Logistics',
+                       'Marine Shipping',
+                       'Metal Fabrication',
+                       'Pollution & Treatment Controls',
+                       'Railroads',
+                       'Rental & Leasing Services',
+                       'Security & Protection Services',
+                       'Specialty Business Services',
+                       'Specialty Industrial Machinery',
+                       'Staffing & Employment Services',
+                       'Tools & Accessories',
+                       'Trucking',
+                       'Waste Management'},
+    'Real Estate': {   'REIT - Diversified',
+                       'REIT - Healthcare Facilities',
+                       'REIT - Hotel & Motel',
+                       'REIT - Industrial',
+                       'REIT - Mortgage',
+                       'REIT - Office',
+                       'REIT - Residential',
+                       'REIT - Retail',
+                       'REIT - Specialty',
+                       'Real Estate - Development',
+                       'Real Estate - Diversified',
+                       'Real Estate Services'},
+    'Technology': {   'Communication Equipment',
+                      'Computer Hardware',
+                      'Consumer Electronics',
+                      'Electronic Components',
+                      'Electronics & Computer Distribution',
+                      'Information Technology Services',
+                      'Scientific & Technical Instruments',
+                      'Semiconductor Equipment & Materials',
+                      'Semiconductors',
+                      'Software - Application',
+                      'Software - Infrastructure',
+                      'Solar'},
+    'Utilities': {   'Utilities - Diversified',
+                     'Utilities - Independent Power Producers',
+                     'Utilities - Regulated Electric',
+                     'Utilities - Regulated Gas',
+                     'Utilities - Regulated Water',
+                     'Utilities - Renewable'}
 }
