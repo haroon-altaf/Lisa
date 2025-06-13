@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag, ResultSet
 from collections import namedtuple
 from datetime import datetime
+from enum import Enum
 from functools import reduce
 from helpers import parse_html, p_to_str, custom_table_to_df, WebSession
 import io
@@ -16,6 +17,43 @@ from typing import List, Dict, NamedTuple, Tuple
 import zipfile
 
 """A module containing classes to scrape and process economic reports and indicators from various sources."""
+
+#%%
+class Month(Enum):
+    JANUARY = 1
+    FEBRUARY = 2
+    MARCH = 3
+    APRIL = 4
+    MAY = 5
+    JUNE = 6
+    JULY = 7
+    AUGUST = 8
+    SEPTEMBER = 9
+    OCTOBER = 10
+    NOVEMBER = 11
+    DECEMBER = 12
+
+class Url(Enum):
+    US_MAN_PMI = "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/pmi/"
+    US_SER_PMI = "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/services/"
+    US_CONS_INDEX = "https://www.sca.isr.umich.edu/files/tbcics.csv"
+    US_CONS_COMP = "https://www.sca.isr.umich.edu/files/tbciccice.csv"
+    US_BUIL_PERMIT = "https://www.census.gov/construction/nrc/xls/permits_cust.xlsx"
+    US_BUIL_AUTH = "https://www.census.gov/construction/nrc/xls/authnot_cust.xlsx"
+    US_BUIL_START = "https://www.census.gov/construction/nrc/xls/starts_cust.xlsx"
+    US_BUIL_CONSTRUCT = "https://www.census.gov/construction/nrc/xls/under_cust.xlsx"
+    US_BUIL_COMPLETE = "https://www.census.gov/construction/nrc/xls/comps_cust.xlsx"
+    EURO = "https://ec.europa.eu/economy_finance/db_indicators/surveys/documents/series/nace2_ecfin_2504/main_indicators_sa_nace2.zip"
+    CAIXIN_MAN_PMI = "https://tradingeconomics.com/china/manufacturing-pmi"
+    CAIXIN_SER_PMI = "https://tradingeconomics.com/china/services-pmi"
+    FINVIZ_BASE = "https://finviz.com/screener.ashx?v=151&f=ind_stocksonly&o=ticker&c="
+    COMMODITIES = "https://tradingeconomics.com/commodities"
+    STOCKS = "https://tradingeconomics.com/stocks"
+    BONDS = "https://tradingeconomics.com/bonds"
+    CURRENCIES = "https://tradingeconomics.com/currencies"
+    CRYPTO = "https://tradingeconomics.com/crypto"
+
+
 
 #%%
 class ManufacturingPmi:
@@ -80,8 +118,8 @@ class ManufacturingPmi:
             prev_month = datetime.now().month - 1
 
             for i in range(3):
-                month = datetime(1900, prev_month - i, 1).strftime("%B").lower()
-                url = f"https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/pmi/{month}/"
+                month = Month((prev_month - 2) % 12 + 1).name.lower() # alternatively use: datetime(1900, prev_month - i, 1).strftime("%B").lower()
+                url = f"{Url.US_MAN_PMI}{month}/"
                 
                 with WebSession() as session:
                     response = session.get(url)
@@ -325,8 +363,8 @@ class ServicesPmi:
             prev_month = datetime.now().month - 1
 
             for i in range(3):
-                month = datetime(1900, prev_month - i, 1).strftime("%B").lower()
-                url = f"https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/services/{month}/"
+                month =  Month((prev_month - 2) % 12 + 1).name.lower() # datetime(1900, prev_month - i, 1).strftime("%B").lower()
+                url = f"{Url.US_SER_PMI}{month}/"
                 
                 with WebSession() as session:
                     response = session.get(url)
@@ -530,12 +568,9 @@ class ConsumerSurvey:
     def download(cls) -> ConsumerSurvey | None:
         
         # Fetch the US Michigan Consumer Index, and the Current and Expected Components
-        index_url = "https://www.sca.isr.umich.edu/files/tbcics.csv"
-        components_url = "https://www.sca.isr.umich.edu/files/tbciccice.csv"
-
         with WebSession() as session:
-            response_index = session.get(index_url)
-            response_components = session.get(components_url)
+            response_index = session.get(Url.US_CONS_INDEX)
+            response_components = session.get(Url.US_CONS_COMP)
         
         try:
             assert response_index
@@ -594,18 +629,12 @@ class ConstructionSurvey:
     def download(cls) -> ConstructionSurvey | None:
         
         # Fetch the US Census Bureau Construction Survey data
-        permit_url = "https://www.census.gov/construction/nrc/xls/permits_cust.xlsx"
-        auth_url = "https://www.census.gov/construction/nrc/xls/authnot_cust.xlsx"
-        start_url = "https://www.census.gov/construction/nrc/xls/starts_cust.xlsx"
-        construct_url = "https://www.census.gov/construction/nrc/xls/under_cust.xlsx"
-        complete_url = "https://www.census.gov/construction/nrc/xls/comps_cust.xlsx"
-
         with WebSession() as session:
-            response_permit = session.get(permit_url)
-            response_auth = session.get(auth_url)
-            response_start = session.get(start_url)
-            response_construct = session.get(construct_url)
-            response_complete = session.get(complete_url)
+            response_permit = session.get(Url.US_BUIL_PERMIT)
+            response_auth = session.get(Url.US_BUIL_AUTH)
+            response_start = session.get(Url.US_BUIL_START)
+            response_construct = session.get(Url.US_BUIL_CONSTRUCT)
+            response_complete = session.get(Url.US_BUIL_COMPLETE)
 
         try:
             assert response_permit
@@ -668,10 +697,8 @@ class EuroSurvey:
     def download(cls) -> EuroSurvey | None:
         
         # Fetch the EU Economic Survey data
-        url = "https://ec.europa.eu/economy_finance/db_indicators/surveys/documents/series/nace2_ecfin_2504/main_indicators_sa_nace2.zip"
-
         with WebSession() as session:
-            response = session.get(url)
+            response = session.get(Url.EURO)
 
         try:
             assert response
@@ -699,8 +726,7 @@ class EuroSurvey:
         df.insert(1, "Year", df["Date"].dt.year)
         df["Year"] = df["Year"].astype(int)
 
-        months_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-        df.insert(2, "Month", df["Date"].dt.month.apply(lambda x: months_list[x - 1]))
+        df.insert(2, "Month", df["Date"].dt.month_name()) #.apply(lambda x: Month(x).name.capitalize()))
         df["Month"] = df["Month"].astype('string')
 
         # Drop "unnamed" and "date" columns
@@ -735,9 +761,8 @@ class CaixinManufacturingPmi:
     @classmethod
     def download(cls) -> CaixinManufacturingPmi | None:
 
-        url = "https://tradingeconomics.com/china/manufacturing-pmi"
         with WebSession() as session:
-            response = session.get(url)
+            response = session.get(Url.CAIXIN_MAN_PMI)
 
         try:
             assert response
@@ -781,9 +806,8 @@ class CaixinServicesPmi:
     @classmethod
     def download(cls) -> CaixinServicesPmi | None:
 
-        url = "https://tradingeconomics.com/china/services-pmi"
         with WebSession() as session:
-            response = session.get(url)
+            response = session.get(Url.CAIXIN_SER_PMI)
 
         try:
             assert response
@@ -834,7 +858,7 @@ class FinvizSreener:
     def download(cls, num_rows: int | None = None, view_col_nums: List[int] | None = None) -> FinvizSreener | None:
 
         # Define url for viewing all columns; all downloaded and later filtered to show only selected columns
-        url = "https://finviz.com/screener.ashx?v=151&f=ind_stocksonly&o=ticker&c=" + (',').join([str(i) for i in cls._col_nums])
+        url = Url.FINVIZ_BASE + (',').join([str(i) for i in cls._col_nums])
         
         # Set default values and check input types
         if not num_rows: 
@@ -1038,7 +1062,7 @@ class MarketData:
     def download(cls) -> MarketData:
         
         # Commodities
-        data = cls._main(url='https://tradingeconomics.com/commodities')
+        data = cls._main(url=Url.COMMODITIES)
         if data:
             category_dict, all = data
             commodities = Commodities(category_dict, all)
@@ -1046,7 +1070,7 @@ class MarketData:
             commodities = None
 
         # Stocks
-        data = cls._main(url='https://tradingeconomics.com/stocks')
+        data = cls._main(url=Url.STOCKS)
         if data:
             category_dict, all = data
             stocks = Stocks(category_dict, all)
@@ -1054,7 +1078,7 @@ class MarketData:
             stocks = None
 
         # Bonds
-        data = cls._main(url='https://tradingeconomics.com/bonds')
+        data = cls._main(url=Url.BONDS)
         if data:
             category_dict, all = data
             bonds = Bonds(category_dict, all)
@@ -1062,7 +1086,7 @@ class MarketData:
             bonds = None
 
         # Currencies
-        data = cls._main(url='https://tradingeconomics.com/currencies')
+        data = cls._main(url=Url.CURRENCIES)
         if data:
             category_dict, all = data
             currencies = Currencies(category_dict, all)
@@ -1070,7 +1094,7 @@ class MarketData:
             currencies = None
 
         # Crypto
-        data = cls._main(url='https://tradingeconomics.com/crypto')
+        data = cls._main(url=Url.CRYPTO)
         if data:
             category_dict, all = data
             crypto = Crypto(category_dict, all)
