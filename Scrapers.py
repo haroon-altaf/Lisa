@@ -6,7 +6,7 @@ from collections import namedtuple
 from datetime import datetime
 from enum import Enum
 from functools import reduce
-from helpers import parse_html, p_to_str, custom_table_to_df, WebSession
+from helpers import find_content, p_to_str, custom_table_to_df, WebSession
 import io
 from ism_pmi_report_structures import Man_Pmi_Structure, Serv_Pmi_Structure
 from loggers import web_scraping_logger      
@@ -17,21 +17,6 @@ from typing import List, Dict, NamedTuple, Tuple
 import zipfile
 
 """A module containing classes to scrape and process economic reports and indicators from various sources."""
-
-#%%
-class Month(Enum):
-    JANUARY = 1
-    FEBRUARY = 2
-    MARCH = 3
-    APRIL = 4
-    MAY = 5
-    JUNE = 6
-    JULY = 7
-    AUGUST = 8
-    SEPTEMBER = 9
-    OCTOBER = 10
-    NOVEMBER = 11
-    DECEMBER = 12
 
 class Url(Enum):
     US_MAN_PMI = "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/pmi/"
@@ -52,8 +37,6 @@ class Url(Enum):
     BONDS = "https://tradingeconomics.com/bonds"
     CURRENCIES = "https://tradingeconomics.com/currencies"
     CRYPTO = "https://tradingeconomics.com/crypto"
-
-
 
 #%%
 class ManufacturingPmi:
@@ -104,6 +87,10 @@ class ManufacturingPmi:
     def sections(self) -> NamedTuple:
         return self._sections
     
+    @property
+    def data(self) -> NamedTuple:
+        return self._sections
+    
     @classmethod
     def download(cls, url: str | None = None) -> ManufacturingPmi | None:
         """
@@ -118,8 +105,8 @@ class ManufacturingPmi:
             prev_month = datetime.now().month - 1
 
             for i in range(3):
-                month = Month((prev_month - 2) % 12 + 1).name.lower() # alternatively use: datetime(1900, prev_month - i, 1).strftime("%B").lower()
-                url = f"{Url.US_MAN_PMI}{month}/"
+                month = datetime(1900, prev_month - i, 1).strftime("%B").lower()
+                url = f"{Url.US_MAN_PMI.value}{month}/"
                 
                 with WebSession() as session:
                     response = session.get(url)
@@ -167,7 +154,7 @@ class ManufacturingPmi:
                 search_methods = search_formula['methods']
 
                 try:
-                    section_content = parse_html(soup, search_tag, search_attrs, search_methods)
+                    section_content = find_content(soup, search_tag, search_attrs, search_methods)
                     assert type(section_content) in [Tag, ResultSet]
                 except AssertionError:
                     web_scraping_logger.exception(f"\n\nNo content could be retrieved for '{segment}' using provided search parameters.")
@@ -349,6 +336,10 @@ class ServicesPmi:
     def sections(self) -> NamedTuple:
         return self._sections
     
+    @property
+    def data(self) -> NamedTuple:
+        return self._sections
+    
     @classmethod
     def download(cls, url: str | None = None) -> ServicesPmi | None:
         """
@@ -363,8 +354,8 @@ class ServicesPmi:
             prev_month = datetime.now().month - 1
 
             for i in range(3):
-                month =  Month((prev_month - 2) % 12 + 1).name.lower() # datetime(1900, prev_month - i, 1).strftime("%B").lower()
-                url = f"{Url.US_SER_PMI}{month}/"
+                month = datetime(1900, prev_month - i, 1).strftime("%B").lower()
+                url = f"{Url.US_SER_PMI.value}{month}/"
                 
                 with WebSession() as session:
                     response = session.get(url)
@@ -412,7 +403,7 @@ class ServicesPmi:
                 search_methods = search_formula['methods']
                 
                 try:
-                    section_content = parse_html(soup, search_tag, search_attrs, search_methods)
+                    section_content = find_content(soup, search_tag, search_attrs, search_methods)
                     assert type(section_content) in [Tag, ResultSet]
                 except AssertionError:
                     web_scraping_logger.exception(f"No content could be retrieved for '{segment}' using provided search parameters.")
@@ -569,8 +560,8 @@ class ConsumerSurvey:
         
         # Fetch the US Michigan Consumer Index, and the Current and Expected Components
         with WebSession() as session:
-            response_index = session.get(Url.US_CONS_INDEX)
-            response_components = session.get(Url.US_CONS_COMP)
+            response_index = session.get(Url.US_CONS_INDEX.value)
+            response_components = session.get(Url.US_CONS_COMP.value)
         
         try:
             assert response_index
@@ -630,11 +621,11 @@ class ConstructionSurvey:
         
         # Fetch the US Census Bureau Construction Survey data
         with WebSession() as session:
-            response_permit = session.get(Url.US_BUIL_PERMIT)
-            response_auth = session.get(Url.US_BUIL_AUTH)
-            response_start = session.get(Url.US_BUIL_START)
-            response_construct = session.get(Url.US_BUIL_CONSTRUCT)
-            response_complete = session.get(Url.US_BUIL_COMPLETE)
+            response_permit = session.get(Url.US_BUIL_PERMIT.value)
+            response_auth = session.get(Url.US_BUIL_AUTH.value)
+            response_start = session.get(Url.US_BUIL_START.value)
+            response_construct = session.get(Url.US_BUIL_CONSTRUCT.value)
+            response_complete = session.get(Url.US_BUIL_COMPLETE.value)
 
         try:
             assert response_permit
@@ -697,8 +688,9 @@ class EuroSurvey:
     def download(cls) -> EuroSurvey | None:
         
         # Fetch the EU Economic Survey data
+        url = Url.EURO.value
         with WebSession() as session:
-            response = session.get(Url.EURO)
+            response = session.get(url)
 
         try:
             assert response
@@ -726,7 +718,7 @@ class EuroSurvey:
         df.insert(1, "Year", df["Date"].dt.year)
         df["Year"] = df["Year"].astype(int)
 
-        df.insert(2, "Month", df["Date"].dt.month_name()) #.apply(lambda x: Month(x).name.capitalize()))
+        df.insert(2, "Month", df["Date"].dt.month_name())
         df["Month"] = df["Month"].astype('string')
 
         # Drop "unnamed" and "date" columns
@@ -761,8 +753,9 @@ class CaixinManufacturingPmi:
     @classmethod
     def download(cls) -> CaixinManufacturingPmi | None:
 
+        url = Url.CAIXIN_MAN_PMI.value
         with WebSession() as session:
-            response = session.get(Url.CAIXIN_MAN_PMI)
+            response = session.get(url)
 
         try:
             assert response
@@ -806,8 +799,9 @@ class CaixinServicesPmi:
     @classmethod
     def download(cls) -> CaixinServicesPmi | None:
 
+        url = Url.CAIXIN_SER_PMI.value
         with WebSession() as session:
-            response = session.get(Url.CAIXIN_SER_PMI)
+            response = session.get(url)
 
         try:
             assert response
@@ -858,7 +852,7 @@ class FinvizSreener:
     def download(cls, num_rows: int | None = None, view_col_nums: List[int] | None = None) -> FinvizSreener | None:
 
         # Define url for viewing all columns; all downloaded and later filtered to show only selected columns
-        url = Url.FINVIZ_BASE + (',').join([str(i) for i in cls._col_nums])
+        url = Url.FINVIZ_BASE.value + (',').join([str(i) for i in cls._col_nums])
         
         # Set default values and check input types
         if not num_rows: 
@@ -1016,12 +1010,8 @@ class MarketData:
     A class to represent market data from Trading Economics, including commodities, stocks, bonds, currencies, and cryptocurrencies.
     
     Attributes:
-        commodities: An instance of the Commodities class containing commodity data.
-        stocks: An instance of the Stocks class containing stock data.
-        bonds: An instance of the Bonds class containing bond data.
-        currencies: An instance of the Currencies class containing currency data.
-        crypto: An instance of the Crypto class containing cryptocurrency data.
-    
+        data: A namedtuple with 5 other namedtuples as values: commodities, stocks, bonds, currencies, crypto.
+
     Methods:
         download: Downloads market data from Trading Economics for commodities, stocks, bonds, currencies, and cryptocurrencies; returns constructed sub-classes to MarketData constructor
         _main: Fetches the HTML tables from Trading Economics and processes them into a dictionary of Pandas DataFrames.
@@ -1030,81 +1020,47 @@ class MarketData:
         _combine_dfs: Combines a list of DataFrames into a single DataFrame.
     """
 
-    def __init__(self, commodities: Commodities | None, stocks: Stocks | None, bonds: Bonds | None, currencies: Currencies | None, crypto: Crypto | None) -> None:
-        if commodities: self._commodities = commodities
-        if stocks: self._stocks = stocks
-        if bonds: self._bonds = bonds
-        if currencies: self._currencies = currencies
-        if crypto: self._crypto = crypto
+    def __init__(self, data: NamedTuple) -> None:
+        self._data = data
 
     @property
-    def commodities(self) -> Commodities:
-        return self._commodities
-    
-    @property
-    def stocks(self) -> Stocks:
-        return self._stocks
-    
-    @property
-    def bonds(self) -> Bonds:
-        return self._bonds
-    
-    @property
-    def currencies(self) -> Currencies:
-        return self._currencies
-    
-    @property
-    def crypto(self) -> Crypto:
-        return self._crypto
-        
+    def data(self) -> NamedTuple:
+        return self._data        
 
     @classmethod
-    def download(cls) -> MarketData:
+    def download(cls) -> MarketData | None:
         
         # Commodities
-        data = cls._main(url=Url.COMMODITIES)
-        if data:
-            category_dict, all = data
-            commodities = Commodities(category_dict, all)
-        else:
-            commodities = None
+        data_dict = cls._main(url=Url.COMMODITIES.value)
+        commodities = namedtuple('commodities', data_dict.keys())(**data_dict) if data_dict else None
 
         # Stocks
-        data = cls._main(url=Url.STOCKS)
-        if data:
-            category_dict, all = data
-            stocks = Stocks(category_dict, all)
-        else:
-            stocks = None
+        data_dict = cls._main(url=Url.STOCKS.value)
+        stocks = namedtuple('stocks', data_dict.keys())(**data_dict) if data_dict else None
 
         # Bonds
-        data = cls._main(url=Url.BONDS)
-        if data:
-            category_dict, all = data
-            bonds = Bonds(category_dict, all)
-        else:
-            bonds = None
+        data_dict = cls._main(url=Url.BONDS.value)
+        bonds = namedtuple('bonds', data_dict.keys())(**data_dict) if data_dict else None
 
         # Currencies
-        data = cls._main(url=Url.CURRENCIES)
-        if data:
-            category_dict, all = data
-            currencies = Currencies(category_dict, all)
-        else:
-            currencies = None
+        data_dict = cls._main(url=Url.CURRENCIES.value)
+        currencies = namedtuple('currencies', data_dict.keys())(**data_dict) if data_dict else None
 
         # Crypto
-        data = cls._main(url=Url.CRYPTO)
-        if data:
-            category_dict, all = data
-            crypto = Crypto(category_dict, all)
-        else:
-            crypto = None
+        data_dict = cls._main(url=Url.CRYPTO.value)
+        crypto = namedtuple('crypto', data_dict.keys())(**data_dict) if data_dict else None
 
-        return cls(commodities, stocks, bonds, currencies, crypto)
+        # All Data
+        data_dict = {"commodities": commodities, "stocks": stocks, "bonds": bonds, "currencies": currencies, "crypto": crypto}
+        data = namedtuple('data', data_dict.keys())(**data_dict)
+        
+        if any([i for i in data]):
+            return cls(data)
+        else:
+            return None
 
     @classmethod
-    def _main(cls, url: str) -> Tuple[dict[str, pd.DataFrame], pd.DataFrame] | None:
+    def _main(cls, url: str) -> Dict[str, pd.DataFrame] | None:
         with WebSession() as session:
             response = session.get(url)
             
@@ -1120,9 +1076,9 @@ class MarketData:
                 if not df.empty or not df.columns:
                     category_name = df.columns[0].lower().strip()
                     category_dict[category_name] = df
-            all = cls._combine_dfs(clean_dfs)
+            category_dict['all'] = cls._combine_dfs(clean_dfs)
 
-            return category_dict, all
+            return category_dict
 
         except Exception as e:
             web_scraping_logger.exception(f"\n\nFailed to fetch data from Trading Economics: {url}\nError: {e}")
@@ -1187,118 +1143,3 @@ class MarketData:
         df_combined = pd.concat(dfs_copy, axis=0, ignore_index=True)
 
         return df_combined
-    
-class Commodities(MarketData):
-    """
-    A class to represent commodities data from Trading Economics.
-    
-    Attributes:
-        category_dict: A dictionary mapping commodity categories to their respective DataFrames.
-        all: A DataFrame containing all commodities data.
-    """
-
-    def __init__(self, category_dict: Dict[str, pd.DataFrame], all: pd.DataFrame) -> None:
-        self._all = all
-        self._category_dict = category_dict
-    
-    @property
-    def all(self) -> pd.DataFrame:
-        return self._all
-    
-    def __getattr__(self, name: str) -> pd.DataFrame:
-        if name in self._category_dict:
-            return self._category_dict[name]
-        else:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}' or no such category data.")
-        
-class Stocks(MarketData):
-    """
-    A class to represent stock market data from Trading Economics.
-    
-    Attributes:
-        category_dict: A dictionary mapping stock market categories to their respective DataFrames.
-        all: A DataFrame containing all stocks data.
-    """
-
-    def __init__(self, category_dict: Dict[str, pd.DataFrame], all: pd.DataFrame) -> None:
-        self._all = all
-        self._category_dict = category_dict
-    
-    @property
-    def all(self) -> pd.DataFrame:
-        return self._all
-    
-    def __getattr__(self, name: str) -> pd.DataFrame:
-        if name in self._category_dict:
-            return self._category_dict[name]
-        else:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}' or no such category data.")
-
-class Bonds(MarketData):
-    """
-    A class to represent bond market data from Trading Economics.
-
-    Attributes:
-        category_dict: A dictionary mapping bond market categories to their respective DataFrames.
-        all: A DataFrame containing all bonds data.
-    """
-
-    def __init__(self, category_dict: Dict[str, pd.DataFrame], all: pd.DataFrame) -> None:
-        self._all = all
-        self._category_dict = category_dict
-    
-    @property
-    def all(self) -> pd.DataFrame:
-        return self._all
-    
-    def __getattr__(self, name: str) -> pd.DataFrame:
-        if name in self._category_dict:
-            return self._category_dict[name]
-        else:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}' or no such category data.")
-        
-class Currencies(MarketData):
-    """
-    A class to represent currency data from Trading Economics.
-
-    Attributes:
-        category_dict: A dictionary mapping currency categories to their respective DataFrames.
-        all: A DataFrame containing all currencies data.
-    """
-
-    def __init__(self, category_dict: Dict[str, pd.DataFrame], all: pd.DataFrame) -> None:
-        self._all = all
-        self._category_dict = category_dict
-    
-    @property
-    def all(self) -> pd.DataFrame:
-        return self._all
-    
-    def __getattr__(self, name: str) -> pd.DataFrame:
-        if name in self._category_dict:
-            return self._category_dict[name]
-        else:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}' or no such category data.")
-        
-class Crypto(MarketData):
-    """
-    A class to represent cryptocurrency data from Trading Economics.
-
-    Attributes:
-        category_dict: A dictionary mapping cryptocurrency categories to their respective DataFrames.
-        all: A DataFrame containing all cryptocurrencies data.
-    """
-
-    def __init__(self, category_dict: Dict[str, pd.DataFrame], all: pd.DataFrame) -> None:
-        self._all = all
-        self._category_dict = category_dict
-    
-    @property
-    def all(self) -> pd.DataFrame:
-        return self._all
-    
-    def __getattr__(self, name: str) -> pd.DataFrame:
-        if name in self._category_dict:
-            return self._category_dict[name]
-        else:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}' or no such category data.")
