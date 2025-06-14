@@ -6,13 +6,13 @@ from collections import namedtuple
 from datetime import datetime
 from enum import Enum
 from functools import reduce
-from helpers import find_content, p_to_str, custom_table_to_df, WebSession
+from utility import find_content, p_to_str, custom_table_to_df, WebSession
 import io
 from loggers import web_scraping_logger      
 import numpy as np                                                                                   
 import pandas as pd
 import re
-from static_data import Man_Pmi_Structure, Serv_Pmi_Structure, GICS_sector_industry_map
+from static import Man_Pmi_Structure, Serv_Pmi_Structure, GICS_sector_industry_map
 from typing import List, Dict, NamedTuple, Tuple
 import zipfile
 
@@ -28,7 +28,7 @@ class Url(Enum):
     US_BUIL_START = "https://www.census.gov/construction/nrc/xls/starts_cust.xlsx"
     US_BUIL_CONSTRUCT = "https://www.census.gov/construction/nrc/xls/under_cust.xlsx"
     US_BUIL_COMPLETE = "https://www.census.gov/construction/nrc/xls/comps_cust.xlsx"
-    EURO = "https://ec.europa.eu/economy_finance/db_indicators/surveys/documents/series/nace2_ecfin_2504/main_indicators_sa_nace2.zip"
+    EURO = "https://economy-finance.ec.europa.eu/economic-forecast-and-surveys/business-and-consumer-surveys/download-business-and-consumer-survey-data/time-series_en"
     CAIXIN_MAN_PMI = "https://tradingeconomics.com/china/manufacturing-pmi"
     CAIXIN_SER_PMI = "https://tradingeconomics.com/china/services-pmi"
     FINVIZ_SCREEN = "https://finviz.com/screener.ashx?v=151&f=ind_stocksonly&o=ticker&c="
@@ -578,8 +578,8 @@ class ConsumerSurvey:
             web_scraping_logger.exception(f'\n\nFailed to fetch the Consumer Survey data.\nError: {e}')
             return None
     
-    @classmethod
-    def _process_df(cls, df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def _process_df(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
         # Drop empty columns and rows; define column names and data types
         df1 = df1.dropna(axis=1, how='all')
         df1 = df1.dropna(axis=0, how='all')
@@ -652,8 +652,8 @@ class ConstructionSurvey:
             web_scraping_logger.exception(f"\n\nFailed to fetch the Construction Survey data.\nError: {e}")
             return None
         
-    @classmethod
-    def _process_df(cls, xl: pd.ExcelFile) -> pd.DataFrame:
+    @staticmethod
+    def _process_df(xl: pd.ExcelFile) -> pd.DataFrame:
         df = xl.parse(sheet_name='Seasonally Adjusted', header=5, usecols='A:B')
         df = df.dropna(axis=0, how='any')
         df.columns = ['Date', 'Total']
@@ -690,11 +690,16 @@ class EuroSurvey:
         
         # Fetch the EU Economic Survey data
         url = Url.EURO.value
-        with WebSession() as session:
-            response = session.get(url)
-
         try:
+            with WebSession() as session:
+                response = session.get(url)
+                assert response
+                soup = BeautifulSoup(response.content, "html.parser")
+                file_link = soup.find('td').find_next_sibling().find().get('href')
+                response = session.get(file_link)
+            
             assert response
+            
             # Wrap response content in file-like object to extract from zip file and process the excel file
             zip_bytes = io.BytesIO(response.content)   
             with zipfile.ZipFile(zip_bytes) as z:
@@ -710,8 +715,8 @@ class EuroSurvey:
             web_scraping_logger.exception(f"\n\nFailed to fetch the EU Economic Survey data from:{url}\nError: {e}")
             return None
         
-    @classmethod
-    def _process_df(cls, df: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def _process_df(df: pd.DataFrame) -> pd.DataFrame:
         # Rename first column to Date
         df.columns.values[0] = "Date"
 
@@ -825,9 +830,21 @@ class CaixinServicesPmi:
     
 #%%
 class Finviz:
+
+    @staticmethod
+    def stock_description(ticker: str) -> str:
+        url=f"https://finviz.com/quote.ashx?t={ticker}&p=d"
+        response = WebSession().get(url)
+        try:
+            assert response
+            soup = BeautifulSoup(response.content, "html.parser")
+            desc = soup.find('div', attrs={"class":"quote_profile-bio"}).get_text()
+            return desc
+        except:
+            return pd.NA
     
-    @classmethod
-    def _process_df(cls, df: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def _process_df(df: pd.DataFrame) -> pd.DataFrame:
         
         # Convert all columns to string
         df = df.astype('string')
@@ -850,9 +867,13 @@ class Finviz:
         pattern = r'\d{1,2}/\d{1,2}/\d{4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}'
         date_cols = [c for c in df.columns if df[c].str.contains(pattern, regex=True, na=False).any()]
 
-        # Detect cols with no alphabets and dashes(representing columns to be convererted to float types)
-        pattern = r'[A-z/]+|\s-\s'
-        float_cols = [c for c in df.columns if not df[c].str.contains(pattern, regex=True, na=False).any()]
+        # Detect cols with floats
+        pattern = r'^\d+\.{1}\d+$'
+        float_cols = [c for c in df.columns if df[c].str.contains(pattern, regex=True, na=False).any()]
+
+        # Detect cols with ints
+        pattern = r'^\d+$'
+        int_cols = [c for c in df.columns if df[c].str.contains(pattern, regex=True, na=False).any()]
 
         # Treat each col with M/B/K suffixes
         for col in suffix_cols:
@@ -911,7 +932,17 @@ class Finviz:
             # Convert to float
             df[col] = df[col].astype('Float64')
 
-        # Eliminate empty strings and hyphens from remaining (string type)columns
+        # Treat each col wih int types
+        for col in int_cols:
+    
+            # Eliminate empty strings, and "non-int characters"
+            pattern = {r'[^0-9\+\-]': '', r'^(-)?$': pd.NA}
+            df[col] = df[col].replace(pattern, regex=True)
+
+            # Convert to float
+            df[col] = df[col].astype('Int64')
+
+        # Eliminate empty strings and hyphens from remaining (string type) columns
         pattern = {r'^(-)?$': pd.NA}
         df = df.replace(pattern, regex=True)
 
@@ -936,7 +967,6 @@ class FinvizSreener(Finviz):
                  24, 25, 85, 26, 27, 28, 29, 30, 31, 84, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58,
                  134, 125, 126, 59, 68, 70, 80, 83, 76, 60, 61, 62, 63, 64, 67, 69, 81, 86, 87, 88, 65, 66]
     _default_col_nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 14 ,37, 42, 43, 44, 45, 46, 47, 48, 49, 52, 53, 68, 65]
-    _default_rows = 5500
     
     def __init__(self, data: pd.DataFrame) -> None:
         self._data = data.copy(deep=True)
@@ -946,19 +976,16 @@ class FinvizSreener(Finviz):
         return self._data.copy(deep=True)
     
     @classmethod
-    def download(cls, num_rows: int | None = None, view_col_nums: List[int] | None = None) -> FinvizSreener | None:
+    def download(cls, num_rows: int = 5500, view_col_nums: str | List[int] = "default") -> FinvizSreener | None:
 
         # Define url for viewing all columns; all downloaded and later filtered to show only selected columns
         url = Url.FINVIZ_SCREEN.value + (',').join([str(i) for i in cls._col_nums])
         
         # Set default values and check input types
-        if not num_rows: 
-            num_rows = cls._default_rows
-        else:
-            try:
-                num_rows = int(num_rows)
-            except ValueError:
-                raise ValueError("Number of rows must be an integer.")
+        try:
+            num_rows = int(num_rows)
+        except ValueError:
+            raise ValueError("Number of rows must be an integer.")
             
         if view_col_nums == 'all':
             view_col_nums = cls._col_nums
@@ -995,7 +1022,7 @@ class FinvizSreener(Finviz):
         try:
             # Process dataframe to ensure correct types and handling missing values
             data = cls._process_df(df)
-
+            
             # Select subset of columns to view
             num_name_dict = {num: name for num, name in zip(cls._col_nums, data.columns)}
             view_col_names = [num_name_dict[i] for i in view_col_nums]
@@ -1126,8 +1153,8 @@ class MarketData:
             web_scraping_logger.exception(f"\n\nFailed to fetch data from Trading Economics: {url}\nError: {e}")
             return None
 
-    @classmethod
-    def _clean_df(cls, df: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
         df_copy = df.copy()
 
         # Drop empty columns
@@ -1153,8 +1180,8 @@ class MarketData:
     
         return df_copy
     
-    @classmethod
-    def _split_units(cls, clean_df: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def _split_units(clean_df: pd.DataFrame) -> pd.DataFrame:
         
         pattern1 = r'([A-Za-z]{3}\s*/.+)'
         pattern2 = r'(Index )?Points$'
@@ -1172,8 +1199,8 @@ class MarketData:
 
         return clean_df_copy
     
-    @classmethod
-    def _combine_dfs(cls, dfs: List[pd.DataFrame]) -> pd.DataFrame:
+    @staticmethod
+    def _combine_dfs(dfs: List[pd.DataFrame]) -> pd.DataFrame:
         dfs_copy = [df.copy(deep=True) for df in dfs]
 
         # Add category column and rename first column
