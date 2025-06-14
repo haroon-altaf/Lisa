@@ -43,8 +43,8 @@ class WebSession:
         timeout: int = 10,
         max_retries: int = 3,
         backoff_factor: float = 1.0,
-        ua_rotation_interval: int = 100,
-        session_renewal_interval: int = 300,
+        ua_rotation_interval: int = 300,
+        session_renewal_interval: int = 500,
         ua_list = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", 
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36",
@@ -71,7 +71,7 @@ class WebSession:
 
     def _init_session(self):
         self.session = requests.Session()
-        self.session.headers.update({"Accept-Language": "en-US,en;q=0.9"})
+        self.session.headers.update({"Accept-Language": "en-US,en;q=0.9", "User-Agent": self.user_agent})
         adapter = HTTPAdapter(max_retries=self.retry_strategy)
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
