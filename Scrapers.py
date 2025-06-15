@@ -591,6 +591,11 @@ class ConsumerSurvey:
         df2.columns = ["Month", "Year", "Current Index", "Expected Index"]
         df2 = df2.astype({"Month": 'string', "Year": int, "Current Index": 'Float64', "Expected Index": 'Float64'})
 
+        # Some months have "(P)" in the month column; remove it
+        pattern = r'\s*\(P\)\s*'
+        df1["Month"] = df1["Month"].str.replace(pattern, "", regex=True)
+        df2["Month"] = df2["Month"].str.replace(pattern, "", regex=True)
+
         # Merge the two dataframes and re-order columns
         df = df1.merge(df2)
         df = df[["Year", "Month", "Index", "Current Index", "Expected Index"]]
