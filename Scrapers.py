@@ -592,7 +592,7 @@ class ConsumerSurvey:
         df2 = df2.astype({"Month": 'string', "Year": int, "Current Index": 'Float64', "Expected Index": 'Float64'})
 
         # Some months have "(P)" in the month column; remove it
-        pattern = r'\s*\(P\)\s*'
+        pattern = r'\s*\([A-z]\)\s*'
         df1["Month"] = df1["Month"].str.replace(pattern, "", regex=True)
         df2["Month"] = df2["Month"].str.replace(pattern, "", regex=True)
 
