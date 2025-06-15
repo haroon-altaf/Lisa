@@ -840,6 +840,7 @@ class Finviz:
             soup = BeautifulSoup(response.content, "html.parser")
             desc = soup.find('div', attrs={"class":"quote_profile-bio"}).get_text()
             return desc
+        
         except:
             return pd.NA
     
@@ -987,10 +988,10 @@ class FinvizSreener(Finviz):
         except ValueError:
             raise ValueError("Number of rows must be an integer.")
             
-        if view_col_nums == 'all':
-            view_col_nums = cls._col_nums
-        elif not view_col_nums or view_col_nums=='default':
+        if view_col_nums == 'default':
             view_col_nums = cls._default_col_nums
+        elif view_col_nums=='all':
+            view_col_nums = cls._col_nums
         else:
             try:
                 view_col_nums = [int(i) for i in view_col_nums]
@@ -1001,19 +1002,14 @@ class FinvizSreener(Finviz):
         with WebSession() as session:
             
             # Finviz shows 20 rows per page; update url (increase r by steps of 20) to navigate through pages 
+            df = pd.DataFrame()
             for count in range(1, num_rows, 20):
                 try:
-                    if count == 1:
-                        response = session.get(url)
-                        assert response
-                        df = pd.read_html(io.StringIO(response.text))[-2]
-
-                    elif count > 1:
-                        url = url + "&r=" + str(count)
-                        response = session.get(url)
-                        assert response
-                        df_i = pd.read_html(io.StringIO(response.text))[-2]
-                        df = pd.concat([df, df_i], ignore_index=True)
+                    url = url + "&r=" + str(count)
+                    response = session.get(url)
+                    assert response
+                    df_i = pd.read_html(io.StringIO(response.text))[-2]
+                    df = pd.concat([df, df_i], ignore_index=True)
 
                 except Exception as e:
                     web_scraping_logger.exception(f'\n\nFailed to fetch the Finviz Stock Screener data from: {url}\nError: {e}')
@@ -1028,11 +1024,11 @@ class FinvizSreener(Finviz):
             view_col_names = [num_name_dict[i] for i in view_col_nums]
             data = data[view_col_names]
 
+            return cls(data)
+
         except Exception as e:
             web_scraping_logger.exception(f"\n\nFailed to fetch the Finviz Stock Screener data from: {url}\nError: {e}")
             return None
-
-        return cls(data)
     
 class FinvizIndustries(Finviz):
     """
