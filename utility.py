@@ -2,125 +2,123 @@
 from __future__ import annotations                                                                                        
 from bs4 import BeautifulSoup
 from bs4.element import Tag, ResultSet
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from loggers import web_scraping_logger    
 import pandas as pd
 import random
 import requests
 from requests.adapters import HTTPAdapter
+import threading
 from typing import List, Dict
 from urllib3.util.retry import Retry
 
 """A module containing utility functions and classes for web scraping tasks."""
 
 #%%
-"""
-WebSession class for managing web requests with user-agent rotation and session renewal.
-
-Attributes:
-    timeout (int): Timeout for requests in seconds.
-    ua_rotation_interval (int): Number of successful requests before rotating the user-agent.
-    session_renewal_interval (int): Number of successful requests before renewing the session.
-    success_count (int): Counter for successful requests.
-    prev_url (str): Previous URL to use as a referer.
-    user_agent (str): Current user-agent string.
-    retry_strategy (Retry): Retry strategy for handling request failures.
-    session (requests.Session): The session object for making requests.
-
-Methods:
-    __enter__(): Returns the WebSession object for use in a context manager.
-    __exit__(exc_type, exc_val, exc_tb): Closes the session when exiting the context manager.
-    __init__(timeout, max_retries, backoff_factor, ua_rotation_interval, session_renewal_interval, ua_list): Initializes the WebSession object.
-    _init_session(): Initializes a requests.session with retry strategy.
-    _rotateuser_agent(): Rotates the user-agent string.
-    _renew_session(): Renews the session by closing and reinitializing it.
-    get(url): Makes a GET request to the specified URL with appropriate headers and handles retries. Exposed as a public method.
-
-"""
 class WebSession:
+    """
+    A thread-safe, high-performance web session client that manages concurrent requests using an internal thread pool.
+
+    This class handles automatic retries, user-agent rotation, and session renewal. It is designed to be used as a context manager.
+
+    Example:
+        urls = ["http://example.com"] * 10
+        with ConcurrentWebSession(max_workers=5) as session:
+            results = session.get_many(urls)
+            for url, response in results.items():
+                if response:
+                    print(f"Got {url} with status {response.status_code}")
+    """
 
     def __init__(
         self,
         timeout: int = 10,
         max_retries: int = 3,
         backoff_factor: float = 1.0,
-        ua_rotation_interval: int = 500,
         session_renewal_interval: int = 1000,
-        ua_list = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", 
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Safari/605.1.15"
+        ua_list: list[str] = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Mobile/15E148 Safari/604.1"
         ]
     ):
-        self.timeout = timeout
-        self.ua_rotation_interval = ua_rotation_interval
-        self.session_renewal_interval = session_renewal_interval
-        self.success_count = 0
-        self.prev_url = "https://google.com"
-        self.ua_list = ua_list
-        self.user_agent = random.choice(ua_list)
+        """
+        Initializes the WebSession.
 
-        self.retry_strategy = Retry(
+        Args:
+            max_workers (int): The number of concurrent threads to use for requests.
+            timeout (int): Default timeout for each web request in seconds.
+            max_retries (int): Maximum number of retries for failed requests.
+            backoff_factor (float): Factor to determine sleep time between retries.
+            ua_rotation_interval (int): Rotate user-agent after this many successful requests.
+            session_renewal_interval (int): Renew the entire session after this many requests.
+            ua_list (list[str]): A list of user-agent strings to rotate through. Defaults to a built-in list.
+        """
+        self.timeout = timeout
+        self.session_renewal_interval = session_renewal_interval
+        self.ua_list = ua_list
+
+        self._retry_strategy = Retry(
             total=max_retries,
             backoff_factor=backoff_factor,
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS"],
-            raise_on_status=False
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
         )
-        self._init_session()
 
-    def _init_session(self):
-        self.session = requests.Session()
-        self.session.headers.update({"Accept-Language": "en-US,en;q=0.9", "User-Agent": self.user_agent})
-        adapter = HTTPAdapter(max_retries=self.retry_strategy)
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
+        self._lock = threading.Lock()
+        self._session = self._init_session()
+        self.success_count = 0
 
-    def _rotate_user_agent(self):
-        self.user_agent = random.choice(self.ua_list)
-        self.session.headers.update({"User-Agent": self.user_agent})
-
-    def _renew_session(self):
-        self.session.close()
-        self._init_session()
+    def _init_session(self) -> requests.Session:
+        session = requests.Session()
+        adapter = HTTPAdapter(max_retries=self._retry_strategy)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        session.headers.update({
+            "User-Agent": random.choice(self.ua_list),
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+            "Connection": "keep-alive"
+        })
+        return session        
 
     def get(self, url: str) -> requests.Response | None:
-        
         """
-        Makes a GET request to the specified URL with appropriate headers and handles retries.
+        Makes a single, thread-safe GET request. This method handles all underlying rotation/renewal logic and is safe 
+        to be called from multiple threads.
+
         Args:
-            url (str): The URL to make the GET request to.
+            url (str): The URL to request.
+
         Returns:
-            requests.Response | None: The response object if the request is successful, None otherwise.
+            A requests.Response object on success, otherwise None.
         """
-
-        if self.success_count and self.success_count % self.ua_rotation_interval == 0:
-            self._rotate_user_agent()
-
-        if self.success_count and self.success_count % self.session_renewal_interval == 0:
-            self._renew_session()
-
-        headers = {
-            "User-Agent": self.user_agent,
-            "Referer": self.prev_url
-        }
 
         try:
-            response = self.session.get(url, headers=headers, timeout=self.timeout)
+            response = self._session.get(url, timeout=self.timeout)
             response.raise_for_status()
-            self.prev_url = url
-            self.success_count += 1
+
+            # Lock acquired only for quick state changes
+            with self._lock:
+                self.success_count += 1
+                current_count = self.success_count
+                if current_count % self.session_renewal_interval == 0:
+                    self._session.close()
+                    self._session = self._init_session()
+
             return response
-        
+
         except requests.exceptions.RequestException as e:
-            web_scraping_logger.exception(f"Request to {url} failed: {e}")
+            web_scraping_logger.error(f"Request failed for {url}: {e}")
             return None
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.session.close()
+        self._session.close()
 
 #%%
 def find_content(html_content: BeautifulSoup, search_tag: str, search_attrs: Dict[str, str] = {}, methods: List[Dict[str, str | Dict[str, str]]] = []) -> Tag | ResultSet:
