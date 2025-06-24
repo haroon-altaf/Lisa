@@ -14,7 +14,13 @@ __pycache__/
 *.swp
 *~
 
+# Ignore database files (for now)
+*.db
+*.sqbpro
+
+# Ignore log files
+*.log
+
 # Ignore specific files
-Non Program Files/query.sql
+Non Program Files
 Main.py
-errors.log
