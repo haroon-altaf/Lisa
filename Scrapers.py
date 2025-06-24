@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag, ResultSet
 from collections import namedtuple
 from datetime import datetime
-from enum import Enum
+from enum import Enum, IntEnum
 from functools import reduce
 from utility import find_content, p_to_str, custom_table_to_df, WebSession
 import io
@@ -17,6 +17,19 @@ from typing import List, Dict, NamedTuple, Tuple
 import zipfile
 
 """A module containing classes to scrape and process economic reports and indicators from various sources."""
+class MONTHS(IntEnum):
+    JANUARY, JAN = 1, 1
+    FEBRUARY, FEB = 2, 2
+    MARCH, MAR = 3, 3
+    APRIL, APR = 4, 4
+    MAY = 5
+    JUNE, JUN = 6, 6
+    JULY, JUL = 7, 7
+    AUGUST, AUG = 8, 8
+    SEPTEMBER, SEP = 9, 9
+    OCTOBER, OCT = 10, 10    
+    NOVEMBER, NOV = 11, 11
+    DECEMBER, DEC = 12, 12
 
 class Url(Enum):
     US_MAN_PMI = "https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/pmi/"
@@ -194,7 +207,7 @@ class ManufacturingPmi:
                     for df in df_list:
                         if key == 'buying_policy_table': df.insert(0, 'Category', df.index.name)
                         dates = pd.to_datetime(df.index, format='%b %Y').to_series()
-                        df.insert(0, 'Month', dates.dt.month_name())
+                        df.insert(0, 'Month', dates.dt.month)
                         df.insert(0, 'Year', dates.dt.year)
                         df = df.reset_index(drop=True)
                     df = pd.concat(df_list)                     
@@ -442,7 +455,7 @@ class ServicesPmi:
                 else:
                     for df in df_list:
                         dates = pd.to_datetime(df.index, format='%b %Y').to_series()
-                        df.insert(0, 'Month', dates.dt.month_name())
+                        df.insert(0, 'Month', dates.dt.month)
                         df.insert(0, 'Year', dates.dt.year)
                         df = df.reset_index(drop=True)
                     df = pd.concat(df_list)
@@ -584,17 +597,23 @@ class ConsumerSurvey:
         df1 = df1.dropna(axis=1, how='all')
         df1 = df1.dropna(axis=0, how='all')
         df1.columns = ["Month", "Year", "Index"]
-        df1 = df1.astype({"Month": 'string', "Year": int, "Index": 'Float64'})
         
         df2 = df2.dropna(axis=1, how='all')
         df2 = df2.dropna(axis=0, how='all')
         df2.columns = ["Month", "Year", "Current Index", "Expected Index"]
-        df2 = df2.astype({"Month": 'string', "Year": int, "Current Index": 'Float64', "Expected Index": 'Float64'})
 
         # Some months have "(P)" in the month column; remove it
         pattern = r'\s*\([A-z]\)\s*'
         df1["Month"] = df1["Month"].str.replace(pattern, "", regex=True)
         df2["Month"] = df2["Month"].str.replace(pattern, "", regex=True)
+
+        # Map month names to month numbers
+        df1['Month'] = df1['Month'].map(lambda x: MONTHS[x.upper()])
+        df2['Month'] = df2['Month'].map(lambda x: MONTHS[x.upper()])
+
+        # Convert data types
+        df1 = df1.astype({"Month": 'Int64', "Year": 'Int64', "Index": 'Float64'})
+        df2 = df2.astype({"Month": 'Int64', "Year": 'Int64', "Current Index": 'Float64', "Expected Index": 'Float64'})
 
         # Merge the two dataframes and re-order columns
         df = df1.merge(df2)
@@ -647,9 +666,7 @@ class ConstructionSurvey:
             df_list = [df.rename(columns={'Total': f'Total_{i+1}'}) for i, df in enumerate(df_list)]
             merged_df = reduce(lambda left, right: pd.merge(left, right, on=['Year', 'Month'], how='outer'), df_list)
             merged_df.columns = ['Year', 'Month', 'Permits', 'Authorized', 'Starts', 'Under Construction', 'Completions']
-            
-            merged_df['Month_num'] = pd.to_datetime(merged_df['Month'], format='%B').dt.month
-            merged_df = merged_df.sort_values(by=['Year', 'Month_num']).drop(columns='Month_num').reset_index(drop=True)
+            merged_df = merged_df.sort_values(by=['Year', 'Month']).reset_index(drop=True)
             
             return cls(merged_df)
         
@@ -663,10 +680,10 @@ class ConstructionSurvey:
         df = df.dropna(axis=0, how='any')
         df.columns = ['Date', 'Total']
         df['Date'] = pd.to_datetime(df['Date'])
-        df.insert(0, 'Month', df['Date'].dt.month_name())
+        df.insert(0, 'Month', df['Date'].dt.month)
         df.insert(0, 'Year', df['Date'].dt.year)
         df = df.drop(columns=['Date'])
-        df = df.astype({'Year': int, 'Month': 'string', 'Total': 'Float64'})
+        df = df.astype({'Year': 'Int64', 'Month': 'Int64', 'Total': 'Float64'})
 
         return df
     
@@ -727,10 +744,10 @@ class EuroSurvey:
 
         # Add year and month columns
         df.insert(1, "Year", df["Date"].dt.year)
-        df["Year"] = df["Year"].astype(int)
+        df["Year"] = df["Year"].astype('Int64')
 
-        df.insert(2, "Month", df["Date"].dt.month_name())
-        df["Month"] = df["Month"].astype('string')
+        df.insert(2, "Month", df["Date"].dt.month)
+        df["Month"] = df["Month"].astype('Int64')
 
         # Drop "unnamed" and "date" columns
         df = df.loc[:, ~df.columns.str.contains('unnamed', case=False)]
@@ -773,9 +790,10 @@ class CaixinManufacturingPmi:
             text = BeautifulSoup(response.text, 'html.parser').find(id="description").text
 
             index, month, year = cls._parse_text(text)
+            month = MONTHS[month.upper()].value
 
             df = pd.DataFrame([[year, month, index]], columns=["Year", "Month", "Manufacturing PMI"])
-            df = df.astype({"Year": int, "Month": 'string', "Manufacturing PMI": 'Float64'})
+            df = df.astype({"Year": 'Int64', "Month": 'Int64', "Manufacturing PMI": 'Float64'})
 
             return cls(df)
         
@@ -819,9 +837,10 @@ class CaixinServicesPmi:
             text = BeautifulSoup(response.text, 'html.parser').find(id="description").text
 
             index, month, year = cls._parse_text(text)
+            month = MONTHS[month.upper()].value
 
             df = pd.DataFrame([[year, month, index]], columns=["Year", "Month", "Services PMI"])
-            df = df.astype({"Year": int, "Month": 'string', "Services PMI": 'Float64'})
+            df = df.astype({"Year": 'Int64', "Month": 'Int64', "Services PMI": 'Float64'})
 
             return cls(df)
         
@@ -982,7 +1001,7 @@ class FinvizSreener(Finviz):
         return self._data.copy(deep=True)
     
     @classmethod
-    def download(cls, num_rows: int = 5500, view_col_nums: str | List[int] = "default") -> FinvizSreener | None:
+    def download(cls, num_rows: int = 10000, view_col_nums: str | List[int] = "default") -> FinvizSreener | None:
 
         # Define url for viewing all columns; all downloaded and later filtered to show only selected columns
         url = Url.FINVIZ_SCREEN.value + (',').join([str(i) for i in cls._col_nums])
@@ -1015,6 +1034,7 @@ class FinvizSreener(Finviz):
                     assert response
                     df_i = pd.read_html(io.StringIO(response.text))[-2]
                     df = pd.concat([df, df_i], ignore_index=True)
+                    if len(df_i) < 20: break # Less than 20 rows in table indicate last page of the screener
 
                 except Exception as e:
                     web_scraping_logger.exception(f'\n\nFailed to fetch the Finviz Stock Screener data from: {url}\nError: {e}')
