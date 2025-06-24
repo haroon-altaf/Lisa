@@ -753,8 +753,9 @@ class EuroSurvey:
         df = df.loc[:, ~df.columns.str.contains('unnamed', case=False)]
         df = df.drop(columns=["Date"])
 
-        # Set all numerical columns to float type
-        df.iloc[:, 3:] = df.iloc[:, 3:].astype('float64')
+        # Set all numerical columns to float type; replacing np.nan with pd.NA just for consistency
+        [df[c].astype('Float64') for c in df.columns if c not in ['Year', 'Month']]
+        df = df.replace(np.nan, pd.NA)
 
         return df
 
