@@ -17,18 +17,8 @@ from urllib3.util.retry import Retry
 #%%
 class WebSession:
     """
-    A thread-safe, high-performance web session client that manages concurrent requests using an internal thread pool.
-
-    This class handles automatic retries, user-agent rotation, and session renewal. It is designed to be used as a context manager.
-
-    Example:
-        urls = ["http://example.com"] * 10
-        with ConcurrentWebSession(max_workers=5) as session:
-            results = session.get_many(urls)
-            for url, response in results.items():
-                if response:
-                    print(f"Got {url} with status {response.status_code}")
-    """
+   Class to implement the resquests.get() method with automatic retries, headers, and session renewal (to avoid being blocked by sites). It is designed to be used as a context manager.
+   """
 
     def __init__(
         self,
@@ -65,7 +55,7 @@ class WebSession:
             allowed_methods=["HEAD", "GET", "OPTIONS"]
         )
 
-        self._lock = threading.Lock()
+        self._lock = threading.Lock() # in case I implement asynchronous methods to get URLs in the future.
         self._session = self._init_session()
         self.success_count = 0
 
