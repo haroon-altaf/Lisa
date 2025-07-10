@@ -38,7 +38,6 @@ See example usage of code in this [**jupyer notebook (via nbviewer)**](https://n
 2. Create virtual environment and activate
    ```bash
    python -m venv venv
-   
    .\venv\Scripts\activate
 3. Install required packages into environemnt
    ```bash
