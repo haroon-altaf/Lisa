@@ -28,4 +28,21 @@ The program currently consists of 4 files.
 See example usage of code in this [**jupyer notebook (via nbviewer)**](https://nbviewer.org/github/haroon-altaf/lisp/blob/main/Notebook.ipynb)
 
 ## Setup
-[work in progress]
+**Python version: 3.13.3**
+
+1. Cloning the repository
+   ```bash
+   cd [path where you want to clone the repository]
+   git clone https://github.com/haroon-altaf/lisp
+   cd lisp
+2. Create virtual environment and activate
+   ```bash
+   python -m venv venv
+   
+   .\venv\Scripts\activate
+3. Install required packages into environemnt
+   ```bash
+   pip install -r requirements.txt
+4. Run code
+
+   Create new python file or jupyter notebook; alternatively adapt Notebook.ipynb which contains some examples. 
