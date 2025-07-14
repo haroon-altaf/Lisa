@@ -2,22 +2,19 @@
 from __future__ import annotations                                                                                        
 from bs4 import BeautifulSoup
 from bs4.element import Tag, ResultSet
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from loggers import web_scraping_logger    
 import pandas as pd
 import random
 import requests
 from requests.adapters import HTTPAdapter
-import threading
 from typing import List, Dict
 from urllib3.util.retry import Retry
-
-"""A module containing utility functions and classes for web scraping tasks."""
 
 #%%
 class WebSession:
     """
-   Class to implement the resquests.get() method with automatic retries, headers, and session renewal (to avoid being blocked by sites). It is designed to be used as a context manager.
+   Class to implement the resquests.get() method with automatic retries, headers, and session renewal (to avoid being blocked by sites).
+   It is designed to be used as a context manager.
    """
 
     def __init__(
@@ -36,14 +33,28 @@ class WebSession:
         Initializes the WebSession.
 
         Args:
-            max_workers (int): The number of concurrent threads to use for requests.
-            timeout (int): Default timeout for each web request in seconds.
-            max_retries (int): Maximum number of retries for failed requests.
-            backoff_factor (float): Factor to determine sleep time between retries.
-            ua_rotation_interval (int): Rotate user-agent after this many successful requests.
-            session_renewal_interval (int): Renew the entire session after this many requests.
-            ua_list (list[str]): A list of user-agent strings to rotate through. Defaults to a built-in list.
+            max_workers: int
+            The number of concurrent threads to use for requests.
+            
+            timeout: int
+            Default timeout for each web request in seconds.
+            
+            max_retries: int
+            Maximum number of retries for failed requests.
+            
+            backoff_factor: float
+            Factor to determine sleep time between retries.
+            
+            ua_rotation_interval: int
+            Rotate user-agent after this many successful requests.
+            
+            session_renewal_interval: int
+            Renew the entire session after this many requests.
+            
+            ua_list: list[str]
+            A list of user-agent strings to rotate through. Defaults to a built-in list.
         """
+
         self.timeout = timeout
         self.session_renewal_interval = session_renewal_interval
         self.ua_list = ua_list
@@ -54,8 +65,6 @@ class WebSession:
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["HEAD", "GET", "OPTIONS"]
         )
-
-        self._lock = threading.Lock() # in case I implement asynchronous methods to get URLs in the future.
         self._session = self._init_session()
         self.success_count = 0
 
@@ -74,28 +83,16 @@ class WebSession:
         return session        
 
     def get(self, url: str) -> requests.Response | None:
-        """
-        Makes a single, thread-safe GET request. This method handles all underlying rotation/renewal logic and is safe 
-        to be called from multiple threads.
-
-        Args:
-            url (str): The URL to request.
-
-        Returns:
-            A requests.Response object on success, otherwise None.
-        """
 
         try:
             response = self._session.get(url, timeout=self.timeout)
             response.raise_for_status()
 
-            # Lock acquired only for quick state changes
-            with self._lock:
-                self.success_count += 1
-                current_count = self.success_count
-                if current_count % self.session_renewal_interval == 0:
-                    self._session.close()
-                    self._session = self._init_session()
+            self.success_count += 1
+            current_count = self.success_count
+            if current_count % self.session_renewal_interval == 0:
+                self._session.close()
+                self._session = self._init_session()
 
             return response
 
@@ -113,21 +110,26 @@ class WebSession:
 def find_content(html_content: BeautifulSoup, search_tag: str, search_attrs: Dict[str, str] = {}, methods: List[Dict[str, str | Dict[str, str]]] = []) -> Tag | ResultSet:
 
     """
-    Extracts, from the full HTML content of a webpage obtained using BeautifulSoup, the HTML content of the relevant report sections.
+    Extracts HTML content of the relevant report sections.
     First the find() method is applied to the html_content using the specified search_tag and search_attrs.
-    Then, further methods in the methods list are applied to the object returned by find(), sequentially, to navigate in the HTML tree.
+    Then, further methods specified in the methods list are applied to the object returned by find(), sequentially, to navigate in the HTML tree.
 
     Args:
-        html_content (BeautifulSoup): The full HTML content of the webpage as a BeautifulSoup object.
-        search_tag (str): The HTML tag to search for using the find() method.
-        search_attrs (Dict): A dictionary of attributes to search for using the find() method.
-        methods (List): A list of dictionaries, each containing the: 
-                        (i) method to use, e.g., 'find_next_sibling' or 'find_parent'
-                        (ii) the HTML tag to search for using this method, e.g., 'p' or 'table'
-                        (iii) a dictionary of attribute: value pairs to search for using this method, e.g., {'class_': 'text-center'}
+        html_content: BeautifulSoup
+        The full HTML content of the webpage as a BeautifulSoup object.
+        
+        search_tag: str
+        The HTML tag to search for using the find() method.
+        
+        search_attrs: Dict[str, str]
+        A dictionary of attributes to search for using the find() method.
+        
+        methods: List[Dict[str, str | Dict[str, str]]]
+        A list of dictionaries, each containingfurther methods to chain onto the find() method.
 
     Returns:
-        Tag | ResultSet: The HTML content of a relevant section of the report, returned as a Tag or ResultSet (list of Tags) object.
+        target: Tag | ResultSet
+        The HTML content of a relevant section of the report, returned as a Tag or ResultSet (list of Tags) object.
     """
 
     target = html_content.find(search_tag, **search_attrs)
@@ -144,14 +146,14 @@ def p_to_str(html: Tag | ResultSet) -> str:
 
     """
     Converts a BeautifulSoup Tag or ResultSet object with <p> tags to a string.
-    ResultSet elements are joined with newlines; nested <br> tags are translated to newlines.
-    "*" characters are removed.
+    ResultSet elements are joined with newlines; nested <br> tags are translated to newlines; asterisks are removed.
 
     Args:
-        html (Tag | ResultSet): The beautifulsoup object to convert.
+        html: Tag | ResultSet
+        The beautifulsoup object to convert.
 
     Returns:
-        str: The text within Tag/ResultSet elements processed as strings.
+        str: The text within Tag/ResultSet elements as strings.
     """
 
     if isinstance(html, Tag):
@@ -171,14 +173,16 @@ def custom_table_to_df(table_list: ResultSet) -> List[pd.DataFrame]:
         
         """
         Converts a BeautifulSoup ResultSet object with <Table> tags to a list of Pandas DataFrame objects.
-        "*" characters are removed from table axes and numerical values are converted to floats where valid.
+        Asterisks are removed from table axes and numerical values are converted to floats where valid.
         This function is used instead of pandas.read_html() to handle complex tables with dual headers and merged cells.
 
         Args:
-            table_list (ResultSet): The Beautifulsoup ResultSet object to convert. This is iterable and accessible as a list.
+            table_list: ResultSet
+            The Beautifulsoup ResultSet object to convert. This is iterable and accessible as a list.
 
         Returns:
-            list[pd.DataFrame]: A list of Pandas DataFrame onjects.
+            extracted_tables: List[pd.DataFrame]
+            A list of Pandas DataFrame objects.
         """
 
         extracted_tables = []
