@@ -25,7 +25,7 @@ The program currently consists of 4 files.
 
 
 ## Usage
-See example usage of code in this [**jupyer notebook (via nbviewer)**](https://nbviewer.org/github/haroon-altaf/lisp/blob/8352cc2e29b93261d444d59886628dedda644477/notebook.ipynb)
+See example usage of code in this [**jupyer notebook (via nbviewer)**](https://github.com/haroon-altaf/lisp/blob/35127a7793a518101772e8e5180f50dc82ae34e5/notebook.ipynb)
 
 ## Setup
 **Python version: 3.13.3**
