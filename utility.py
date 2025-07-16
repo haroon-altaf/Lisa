@@ -7,7 +7,7 @@ import pandas as pd
 import random
 import requests
 from requests.adapters import HTTPAdapter
-from typing import List, Dict
+from typing import List, Dict, Any
 from urllib3.util.retry import Retry
 
 #%%
@@ -229,3 +229,42 @@ def custom_table_to_df(table_list: ResultSet) -> List[pd.DataFrame]:
             extracted_tables.append(df)
         
         return extracted_tables
+
+def set_private_attr(obj: Any, d: Dict) -> None:
+    """
+    Sets private attributes (starting with '_') for the instance of a class using key:value pairs.
+    This distcionary unpacking is helpful when lots of attributes are being set at once.
+
+    Args:
+        obj: Any
+        The instance of a class to set attributes for.
+
+        d: Dict
+        A dictionary of key:value pairs.
+    
+    Returns:
+        None
+    """
+    [setattr(obj, f'_{k}', v) for k, v in d.items()]
+
+def set_class_prop(obj: Any, d: Dict) -> None:
+    """
+    Sets class properties (allowing public access to private attributes) for the instance of a class using key:value pairs.
+    This is helpful when a @property is needed to provide read-only access to lots of attributes.
+    For dataframes, a copy of the DataFrame is returned preventing modifications.
+
+    Args:
+        obj: Any
+        The instance of a class to set attributes for.
+
+        d: Dict
+        A dictionary of key:value pairs.
+    
+    Returns:
+        None
+    """
+    for k in d.keys():
+        def get_fn(obj, k=k):
+            v = getattr(obj, f'_{k}')
+            return v.copy(deep=True) if isinstance(v, pd.DataFrame) else v
+        setattr(obj.__class__, k, property(get_fn))
