@@ -4,11 +4,11 @@
 #
 #   Data Structure Name         |   Type        |   Description
 #   ----------------------------|---------------|-------------------------------------------------------------------------------------
-#   Man_Pmi_Structure           |   Dictionary  |   Describes how to naviagate the ISM report HTML to extract sections
-#   Serv_Pmi_Structure          |   Dictionary  |   Describes how to naviagate the ISM report HTML to extract sections
-#   GICS_sector_industry_map    |   Dictionary  |   Presents the GICS sectors and industry mapping as in Finviz
-#   Ism_Man_Sectors             |   List        |   List of NAIC manufacturing sectors as in the ISM industry reports
-#   Ism_Serv_Sectors            |   List        |   List of NAIC services sectors as in the ISM industry reports
+#   MAN_REPORT                  |   Dictionary  |   Describes how to naviagate the ISM report HTML to extract sections
+#   SER_REPORT                  |   Dictionary  |   Describes how to naviagate the ISM report HTML to extract sections
+#   GICS_MAP                    |   Dictionary  |   Presents the GICS sectors and industry mapping as in Finviz
+#   MAN_SECTORS                 |   List        |   List of NAIC manufacturing sectors as in the ISM industry reports
+#   SERV_SECTORS                |   List        |   List of NAIC services sectors as in the ISM industry reports
 
 
 # > Details on data structures (1) and (2):
@@ -37,7 +37,7 @@
 #     In the relevant module, these dictionaries are imported, and fed to a function (defined in helpers.py) that programmatically searches for the target HTML tags using the .find() and other methods from beautifulsoup.
 #     If there are any changes to the ISM reports' website struture, the dictionaries will need to be updated. However, no other code would need changing.
 
-Man_Pmi_Structure = {
+MAN_REPORT = {
     'headline': {
         'tag': 'h1',
         'attrs': {},
@@ -258,7 +258,7 @@ Man_Pmi_Structure = {
     }
 }
 
-Serv_Pmi_Structure = {
+SERV_REPORT = {
     'headline': {
         'tag': 'h1',
         'attrs': {},
@@ -451,7 +451,7 @@ Serv_Pmi_Structure = {
     }
 }
 
-GICS_sector_industry_map = {
+GICS_MAP = {
     'Basic Materials': {   'Agricultural Inputs',
                            'Aluminum',
                            'Building Materials',
@@ -600,12 +600,44 @@ GICS_sector_industry_map = {
 }
 
 
-Ism_Man_Sectors = ["Apparel, Leather & Allied Products", "Chemical Products", "Computer & Electronic Products", "Electrical Equipment, Appliances & Components",
-               "Fabricated Metal Products", "Food, Beverage & Tobacco Products", "Furniture & Related Products", "Machinery", "Miscellaneous Manufacturing",
-               "Nonmetallic Mineral Products", "Paper Products", "Petroleum & Coal Products", "Plastics & Rubber Products", "Primary Metals",
-               "Printing & Related Support Activities", "Textile Mills", "Transportation Equipment", "Wood Products"]
+MAN_SECTORS = [
+    "Apparel, Leather & Allied Products",
+    "Chemical Products",
+    "Computer & Electronic Products",
+    "Electrical Equipment, Appliances & Components",
+    "Fabricated Metal Products",
+    "Food, Beverage & Tobacco Products",
+    "Furniture & Related Products",
+    "Machinery",
+    "Miscellaneous Manufacturing",
+    "Nonmetallic Mineral Products",
+    "Paper Products",
+    "Petroleum & Coal Products",
+    "Plastics & Rubber Products",
+    "Primary Metals",
+    "Printing & Related Support Activities",
+    "Textile Mills",
+    "Transportation Equipment",
+    "Wood Products"
+]
 
-Ism_Serv_Sectors = ["Accommodation & Food Services", "Agriculture, Forestry, Fishing & Hunting", "Arts, Entertainment & Recreation", "Construction",
-            "Educational Services", "Finance & Insurance", "Health Care & Social Assistance", "Information", "Management of Companies & Support Services",
-            "Mining", "Other Services", "Professional, Scientific & Technical Services", "Public Administration", "Real Estate, Rental & Leasing", "Retail Trade",
-            "Transportation & Warehousing", "Utilities", "Wholesale Trade"]
+SERV_SECTORS = [
+    "Accommodation & Food Services",
+    "Agriculture, Forestry, Fishing & Hunting",
+    "Arts, Entertainment & Recreation",
+    "Construction",
+    "Educational Services",
+    "Finance & Insurance",
+    "Health Care & Social Assistance",
+    "Information",
+    "Management of Companies & Support Services",
+    "Mining",
+    "Other Services",
+    "Professional, Scientific & Technical Services",
+    "Public Administration",
+    "Real Estate, Rental & Leasing",
+    "Retail Trade",
+    "Transportation & Warehousing",
+    "Utilities",
+    "Wholesale Trade"
+]
