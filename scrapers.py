@@ -2,7 +2,6 @@
 from __future__ import annotations  
 from bs4 import BeautifulSoup
 from bs4.element import Tag, ResultSet
-from collections import namedtuple
 from datetime import datetime
 from enum import Enum, IntEnum
 from functools import reduce
@@ -11,9 +10,9 @@ from loggers import web_scraping_logger
 import numpy as np                                                                                   
 import pandas as pd
 import re
-from static import Man_Pmi_Structure, Serv_Pmi_Structure, GICS_sector_industry_map, Ism_Man_Sectors, Ism_Serv_Sectors
+from static import MAN_REPORT, SERV_REPORT, MAN_SECTORS, SERV_SECTORS, GICS_MAP
 from typing import List, Dict, NamedTuple, Tuple
-from utility import find_content, p_to_str, custom_table_to_df, WebSession
+from utility import WebSession, find_content, p_to_str, custom_table_to_df, set_private_attr, set_class_prop
 import zipfile
 
 class MONTHS(IntEnum):
@@ -62,8 +61,8 @@ class IsmReport:
         The type of report to be downloaded ('m' for Manufacturing report and 's' for Services report).
 
     Methods:
-        manufacturing: Calls the _main method and constructs a ManufacturingPmi object from the returned NamedTuple.
-        services: Calls the _main method and constructs a ServicesPmi object from the returned NamedTuple.
+        download_manufacturing: Calls the _main method and constructs a ManufacturingPmi object from the returned dictionary.
+        download_services: Calls the _main method and constructs a ServicesPmi object from the returned dictionary.
         _main: Determines the report url; calls the _parse_html method _transform_sections method to extract report setions.
         _parse_html: Parses and extracts relevant report sections from webpage HTML.
         _transform_sections: Transforms extracted HTML content into strings (text) and Pandas DataFrames (tables); derives "rankings" and "comments".
@@ -74,20 +73,14 @@ class IsmReport:
     @classmethod
     def download_manufacturing(cls, url: str | None = None) -> ManufacturingPmi | None:
         cls._report_type = 'm'
-        sections_nt = cls._main(url)
-        if sections_nt:
-            return ManufacturingPmi(sections_nt)
-        else:
-            return None
+        sections = cls._main(url)
+        return ManufacturingPmi(sections) if sections else None
     
     @classmethod
     def download_services(cls, url: str | None = None) -> ServicesPmi | None:
         cls._report_type = 's'
-        sections_nt = cls._main(url)
-        if sections_nt:
-            return ServicesPmi(sections_nt)
-        else:
-            return None
+        sections = cls._main(url)
+        return ServicesPmi(sections) if sections else None
 
     @classmethod
     def _main(cls, url: str | None = None) -> NamedTuple | None:
@@ -129,8 +122,7 @@ class IsmReport:
             html_content = response.text
             html_sections = cls._parse_html(html_content)
             sections = cls._transform_sections(html_sections)
-            sections_nt = namedtuple('sections', sections.keys())(**sections)
-            return sections_nt
+            return sections
         
         except Exception as e:
             web_scraping_logger.exception(f"\n\nFailed to fetch the ISM report from: {url}\nError: {e}")
@@ -154,7 +146,7 @@ class IsmReport:
         soup = BeautifulSoup(html_content, 'html.parser')
         html_sections = {}
 
-        scheme = Man_Pmi_Structure if cls._report_type == 'm' else Serv_Pmi_Structure
+        scheme = MAN_REPORT if cls._report_type == 'm' else SERV_REPORT
 
         for section_name, search_formula in scheme.items():
                 search_tag = search_formula['tag']
@@ -232,9 +224,9 @@ class IsmReport:
         
         rank_by = 'new_orders_text' if cls._report_type == 'm' else 'business_activity_text'
         if 'overview' in transformed_sections and rank_by in transformed_sections:
-            transformed_sections['industry_rankings'] = cls._rankings(transformed_sections['overview'], transformed_sections[rank_by])
+            transformed_sections['sector_ranking'] = cls._rankings(transformed_sections['overview'], transformed_sections[rank_by])
         else:
-            transformed_sections['industry_rankings'] = None
+            transformed_sections['sector_ranking'] = None
         
         if 'comments' in transformed_sections:
             transformed_sections['respondents'] = cls._respondents_say(transformed_sections['comments'])
@@ -244,7 +236,7 @@ class IsmReport:
         return transformed_sections
     
     @classmethod
-    def _rankings(cls, overview: str, new_orders_text: str) -> pd.DataFrame | None:
+    def _rankings(cls, overview: str, rank_by: str) -> pd.DataFrame | None:
         """
         Ranks industry sectors based on the growth/contraction in the PMI and "New Orders" (for manufacturing) or "Business Activity" (for services).
         
@@ -261,49 +253,40 @@ class IsmReport:
         """
 
         if cls._report_type == 'm':
-            sectors = Ism_Man_Sectors
+            sectors = MAN_SECTORS
             col_name = "New Orders Rankings"
         else:
-            sectors = Ism_Serv_Sectors
+            sectors = SERV_SECTORS
             col_name = "Business Activity Rankings"
 
         # Initiate empty dataframe with sectors as index
         df = pd.DataFrame({"Sectors": sectors, "PMI Rankings": [0] * len(sectors), f"{col_name}": [0] * len(sectors)}).set_index('Sectors')
 
+        def sectors_from_text(text: str) -> List[str]:
+            lines = text.split('\n')[-1].split('. ')
+            grow, contract = [line.split(':')[1].split(';') for line in lines]
+            grow, contract = [item.strip() for item in grow], [item.strip() for item in contract]
+            grow[-1], contract[-1] = grow[-1].replace('and ','').replace('.', ''), contract[-1].replace('and ','').replace('.', '')
+            return grow, contract
+
         try:
-            # Get list of growing and contracting sectors (overall)
-            txt = overview.split('\n')[-1]
-            lines = txt.split('.')
-
-            growth_sectors = lines[0].split(':')[1].split(';')
-            growth_sectors[-1] = growth_sectors[-1].replace("and ","")
-
-            contract_sectors = lines[1].split(':')[1].split(';')
-            contract_sectors[-1] = contract_sectors[-1].replace("and ","")
-
             # Rank sectors (overall)
-            for index, item in enumerate(growth_sectors):
-                df.loc[item, "PMI Rankings"] = len(growth_sectors) - index
+            grow, contract = sectors_from_text(overview)
 
-            for index, item in enumerate(contract_sectors):
-                df.loc[item, "PMI Rankings"] = -(len(contract_sectors) - index)
+            for index, item in enumerate(grow):
+                df.loc[item, "PMI Rankings"] = len(grow) - index
 
-            # Get list of growing and contracting sectors (based on New Orders or Business Activity)
-            txt = new_orders_text.split('\n')[-1]
-            lines = txt.split('.')
-
-            growth_sectors = lines[0].split(':')[1].split(';')
-            growth_sectors[-1] = growth_sectors[-1].replace("and ","")
-
-            contract_sectors = lines[1].split(':')[1].split(';')
-            contract_sectors[-1] = contract_sectors[-1].replace("and ","")
+            for index, item in enumerate(contract):
+                df.loc[item, "PMI Rankings"] = -(len(contract) - index)
 
             # Rank sectors (based on New Orders or Business Activity)
-            for index, item in enumerate(growth_sectors):
-                df.loc[item, col_name] = len(growth_sectors) - index
+            grow, contract = sectors_from_text(rank_by)
 
-            for index, item in enumerate(contract_sectors):
-                df.loc[item, col_name] = -(len(contract_sectors) - index)
+            for index, item in enumerate(grow):
+                df.loc[item, col_name] = len(grow) - index
+
+            for index, item in enumerate(contract):
+                df.loc[item, col_name] = -(len(contract) - index)
 
             return df
 
@@ -325,10 +308,8 @@ class IsmReport:
             A Pandas DataFrame containing the respondents' comments for different sectors.
         """
 
-        sectors = Ism_Man_Sectors if cls._report_type == 'm' else Ism_Serv_Sectors
-
         # Initiate empty dataframe with sectors as index
-        df = pd.DataFrame({"Sectors": sectors, "Respondent Comments": [''] * len(sectors)}).set_index('Sectors')
+        df = pd.DataFrame(columns=["Sectors", "Respondent Comments"]).set_index('Sectors')
 
         try:
             # Split comments block into sentences
@@ -337,8 +318,8 @@ class IsmReport:
             # For each comment, extract the sector and quote; store in dataframe
             for comment in txt:
                 quote, sector = comment.split('[')
-                quote = quote[1:-2]
-                sector = sector[:-1]
+                quote = quote[1:-2].strip()
+                sector = sector[:-1].strip()
                 df.loc[sector, "Respondent Comments"] = quote
 
             return df
@@ -349,41 +330,32 @@ class IsmReport:
 
 class ManufacturingPmi(IsmReport):
     """ Represents a Manufacturing PMI report from ISM.
-        Each section of the report is unpacked from a NamedTuple and stored as a private attribute.
+        Each section of the report is unpacked from a dictionary and stored as a private attribute.
         Each private attribute is then exposed to public using class properties (@property).
     """
 
-    def __init__(self, sections: NamedTuple) -> None:
-        
-        sections_dict = sections._asdict()
+    def __init__(self, sections: Dict) -> None:
 
         # Set private attributes
-        for field_name, field_value in sections_dict.items():
-            setattr(self, f'_{field_name}', field_value)
+        set_private_attr(self, sections)
 
         # Set properties for public access
-        for field_name in sections_dict.keys():
-            get_fn = lambda self, field_name=field_name: getattr(self, f'_{field_name}')
-            setattr(self.__class__, field_name, property(get_fn))
+        set_class_prop(self, sections)
+        
 
 class ServicesPmi(IsmReport):
     """ Represents a Services PMI report from ISM.
-        Each section of the report is unpacked from a NamedTuple and stored as a private attribute.
+        Each section of the report is unpacked from a dictionary and stored as a private attribute.
         Each private attribute is then exposed to public using class properties (@property).
     """
 
-    def __init__(self, sections: NamedTuple) -> None:
-        
-        sections_dict = sections._asdict()
+    def __init__(self, sections: Dict) -> None:
 
         # Set private attributes
-        for field_name, field_value in sections_dict.items():
-            setattr(self, f'_{field_name}', field_value)
+        set_private_attr(self, sections)
 
         # Set properties for public access
-        for field_name in sections_dict.keys():
-            get_fn = lambda self, field_name=field_name: getattr(self, f'_{field_name}')
-            setattr(self.__class__, field_name, property(get_fn))
+        set_class_prop(self, sections)
 
 #%%
 class ConsumerSurvey:
@@ -860,8 +832,8 @@ class Finviz:
             df = pd.read_html(io.StringIO(response.text))[-2]
             data = cls._process_df(df)
             data = data.rename(columns={'Name': 'Industry'})
-            GICS_sector_industry_map_inverse = {industry: sector for sector, industries in GICS_sector_industry_map.items() for industry in industries}
-            data.insert(1, "Sector", data['Industry'].map(GICS_sector_industry_map_inverse))
+            GICS_MAP_INV = {industry: sector for sector, industries in GICS_MAP.items() for industry in industries}
+            data.insert(1, "Sector", data['Industry'].map(GICS_MAP_INV))
             return FinvizIndustries(data)
 
         except Exception as e:
@@ -905,76 +877,45 @@ class FinvizIndustries(Finviz):
 #%%
 class MarketData:
     """
-    A class to represent market data from Trading Economics, including commodities, stocks, bonds, currencies, and cryptocurrencies.
+    A class that holds methods for generating subclasses - each of which represents the data for a specific asset class.
     
-    Attributes:
-        commodities: NamedTuple
-        stocks: NamedTuple
-        bonds: NamedTuple
-        currencies: NamedTuple
-        crypto: NamedTuple
-
     Methods:
-        download: Downloads market data from Trading Economics for commodities, stocks, bonds, currencies, and cryptocurrencies; returns constructed sub-classes to MarketData constructor
-        _main: Fetches the HTML tables from Trading Economics and processes them into a dictionary of Pandas DataFrames.
-        _clean_df: Cleans a DataFrame by dropping unwanted/empty columns, removing unwanted characters, converting data types and renaming columns.
-        _split_units: For commodities only; splits the first column of the DataFrames into separate "item" and "units" columns.
-        _combine_dfs: Combines a list of DataFrames into a single DataFrame.
-    """
-
-    def __init__(self, all_namedtuples: List) -> None:
-        self._commodities, self._stocks, self._bonds, self._currencies, self._crypto = all_namedtuples
-
-    @property
-    def commodities(self) -> NamedTuple:
-        return self._commodities
-
-    @property
-    def stocks(self) -> NamedTuple:
-        return self._stocks
-
-    @property
-    def bonds(self) -> NamedTuple:
-        return self._bonds
-
-    @property
-    def currencies(self) -> NamedTuple:
-        return self._currencies
-
-    @property
-    def crypto(self) -> NamedTuple:
-        return self._crypto        
+        download_commodities: Fetches commodities data from Trading Economics and returns a Commodities object.
+        download_stocks: Fetches stocks data from Trading Economics and returns a Stocks object.
+        download_bonds: Fetches bonds data from Trading Economics and returns a Bonds object.
+        download_currencies: Fetches currencies data from Trading Economics and returns a Currencies object.
+        download_crypto: Fetches crypto data from Trading Economics and returns a Crypto object.
+        _main: Sends GET request to Trading Economics; returns a dictionary of DataFrames using _clean_df and _split_units.
+        _clean_df: Returns a cleaned DataFrame.
+        _split_units: For the "commodities" table which has units in the first column, it splits the units out into a separate column.
+        _combine_dfs: Concatenates DataFrames.
+        
+    """   
 
     @classmethod
-    def download(cls) -> MarketData | None:
-        
-        # Commodities
+    def download_commodities(cls) -> Commodities | None:
         data_dict = cls._main(url=Url.COMMODITIES.value)
-        commodities = namedtuple('commodities', data_dict.keys())(**data_dict) if data_dict else None
-
-        # Stocks
+        return Commodities(data_dict) if data_dict else None
+    
+    @classmethod
+    def download_stocks(cls) -> Stocks | None:
         data_dict = cls._main(url=Url.STOCKS.value)
-        stocks = namedtuple('stocks', data_dict.keys())(**data_dict) if data_dict else None
-
-        # Bonds
+        return Stocks(data_dict) if data_dict else None
+    
+    @classmethod
+    def download_bonds(cls) -> Bonds | None:
         data_dict = cls._main(url=Url.BONDS.value)
-        bonds = namedtuple('bonds', data_dict.keys())(**data_dict) if data_dict else None
-
-        # Currencies
+        return Bonds(data_dict) if data_dict else None
+    
+    @classmethod
+    def download_currencies(cls) -> Currencies | None:
         data_dict = cls._main(url=Url.CURRENCIES.value)
-        currencies = namedtuple('currencies', data_dict.keys())(**data_dict) if data_dict else None
-
-        # Crypto
+        return Currencies(data_dict) if data_dict else None
+    
+    @classmethod
+    def download_crypto(cls) -> Crypto | None:
         data_dict = cls._main(url=Url.CRYPTO.value)
-        crypto = namedtuple('crypto', data_dict.keys())(**data_dict) if data_dict else None
-
-        # All Data
-        all_namedtuples = [commodities, stocks, bonds, currencies, crypto]
-        
-        if any(all_namedtuples):
-            return cls(all_namedtuples)
-        else:
-            return None
+        return Crypto(data_dict) if data_dict else None
 
     @classmethod
     def _main(cls, url: str) -> Dict[str, pd.DataFrame] | None:
@@ -1058,5 +999,36 @@ class MarketData:
 
         # Concatenate DataFrames
         df_combined = pd.concat(dfs_copy, axis=0, ignore_index=True)
+        df_combined = df_combined.drop_duplicates(subset=['Item'],keep='last', ignore_index=True)
 
         return df_combined
+
+class Commodities(MarketData):
+    """Represents commodities data from Trading Economics. Each attribute has a DataFrame as value, unpacked from a dictionary."""
+    def __init__(self, data: Dict) -> None:
+        set_private_attr(self, data)
+        set_class_prop(self, data)
+
+class Stocks(MarketData):
+    """Represents stocks data from Trading Economics. Each attribute has a DataFrame as value, unpacked from a dictionary."""
+    def __init__(self, data: Dict) -> None:
+        set_private_attr(self, data)
+        set_class_prop(self, data)
+
+class Bonds(MarketData):
+    """Represents bonds data from Trading Economics. Each attribute has a DataFrame as value, unpacked from a dictionary."""
+    def __init__(self, data: Dict) -> None:
+        set_private_attr(self, data)
+        set_class_prop(self, data)
+
+class Currencies(MarketData):
+    """Represents currencies data from Trading Economics. Each attribute has a DataFrame as value, unpacked from a dictionary."""
+    def __init__(self, data: Dict) -> None:
+        set_private_attr(self, data)
+        set_class_prop(self, data)
+
+class Crypto(MarketData):
+    """Represents crypto data from Trading Economics. Each attribute has a DataFrame as value, unpacked from a dictionary."""
+    def __init__(self, data: Dict) -> None:
+        set_private_attr(self, data)
+        set_class_prop(self, data)
