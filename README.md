@@ -21,7 +21,7 @@ The program currently consists of 4 files.
 1. "static.py" contains some static data; 
 2. "utility.py" contains some functions and a class for managing HTTP requests, used throughout the code;
 3. "loggers.py" is used to configure logging of traceback errors into a txt file.
-4. **"Scrapers.py" is where the majority of the web-scraping logic and functionality is written.** 
+4. **"scrapers.py" is where the majority of the web-scraping logic and functionality is written.** 
 
 
 ## Usage
@@ -44,4 +44,4 @@ See example usage of code in this [**jupyer notebook (via nbviewer)**](https://n
    pip install -r requirements.txt
 4. Run code
 
-   Create new python file or jupyter notebook; alternatively adapt Notebook.ipynb which contains some examples. 
+   Create new python file or jupyter notebook; alternatively adapt notebook.ipynb which contains some examples. 
