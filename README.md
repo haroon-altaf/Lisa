@@ -2,10 +2,10 @@
 A program to scrape and transform some leading economic indicators and stock market data from various sources online.
 
 The program currently consists of 4 files. 
-1. "static.py" contains some static data; 
-2. "utility.py" contains some functions and a class for managing HTTP requests, used throughout the code;
-3. "loggers.py" is used to configure logging of traceback errors into a txt file.
-4. **"scrapers.py" is where the majority of the web-scraping and data-trasformation logic is written.** 
+1. static.py - contains some static data; 
+2. utility.py - contains some functions and a class for managing HTTP requests, used throughout the code;
+3. loggers.py - is used to configure logging of traceback errors into a txt file.
+4. **scrapers.py -  is where the majority of the web-scraping and data-trasformation logic is written.** 
 
 ## Usage
 See example usage of code in this [**jupyer notebook (via nbviewer)**](https://nbviewer.org/github/haroon-altaf/lisp/blob/93456cad544861a082ef801851ba11509437ab57/notebook.ipynb)
