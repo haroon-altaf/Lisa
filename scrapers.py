@@ -264,9 +264,15 @@ class IsmReport:
 
         def sectors_from_text(text: str) -> List[str]:
             lines = text.split('\n')[-1].split('. ')
-            grow, contract = [line.split(':')[1].split(';') for line in lines]
-            grow, contract = [item.strip() for item in grow], [item.strip() for item in contract]
-            grow[-1], contract[-1] = grow[-1].replace('and ','').replace('.', ''), contract[-1].replace('and ','').replace('.', '')
+
+            grow = lines[0].split(':')[1].split(';')
+            grow = [item.strip() for item in grow]
+            grow[-1] = grow[-1].replace('and ','').replace('.', '')
+
+            contract = lines[1].split(':')[1].split(';')
+            contract = [item.strip() for item in contract]
+            contract[-1] = contract[-1].replace('and ','').replace('.', '')
+            
             return grow, contract
 
         try:
