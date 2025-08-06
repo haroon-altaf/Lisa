@@ -10,7 +10,7 @@ The program currently consists of 4 files.
 ## Usage
 See example usage of code in this [**jupyer notebook (via nbviewer)**](https://nbviewer.org/github/haroon-altaf/lisp/blob/93456cad544861a082ef801851ba11509437ab57/notebook.ipynb)
 
-## Next Steps (as of 19 July 2025)
+## Next Steps
 - Write data obtained from online sources into a database (SQLite or MySQL) to build a historical series over time.
 - Read data from database and add trend analyses/graphing features.
 
