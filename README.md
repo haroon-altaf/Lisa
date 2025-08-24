@@ -1,17 +1,22 @@
 ## Lisp
-A program to scrape and transform some leading economic indicators and stock market data from various sources online.
+A program to extract, manipulate, store, and visualize various leading economic indicators and stock market data from online sources.
 
-The program currently consists of 4 files. 
-1. static.py - contains some static data; 
-2. utility.py - contains some functions and a class for managing HTTP requests, used throughout the code;
-3. loggers.py - is used to configure logging of traceback errors into a txt file.
-4. **scrapers.py -  is where the majority of the web-scraping and data-trasformation logic is written.** 
+The program currently consists of 9 files. 
+1. static.py - contains static data and configurable parameters, used in multiple places
+2. utility.py - contains helper functions and a class for managing HTTP requests, used in multiple places
+3. ism_report.py - contains code for scraping data from ISM manufacturing and services reports (US)
+4. consumer_survey.py - contains code for scraping University of Michigan's consumer sentiment data (US)
+5. construction_survey.py - contains code for scraping US Census Bureau's buildings survey data (US)
+6. euro_survey.py - contains code for scraping European economic sentiment data (EU)
+7. caixin_pmi,py - contains code for scraping caixin PMI data (China)
+8. trading_economics.py - contains code for scraping price and performance data for various asset classes
+9. finviz.py - contains code for scraping data from the FinViz stock screener
 
 ## Usage
 See example usage of code in this [**jupyer notebook (via nbviewer)**](https://nbviewer.org/github/haroon-altaf/lisp/blob/4851898373171fa4f017c4f06bfc72e7756ee518/notebook.ipynb)
 
 ## Next Steps
-- Write data obtained from online sources into a database (SQLite or MySQL) to build a historical series over time.
+- Write data obtained from online sources into a database to build a historical series over time.
 - Read data from database and add trend analyses/graphing features.
 
 ## Setup
@@ -31,4 +36,4 @@ See example usage of code in this [**jupyer notebook (via nbviewer)**](https://n
    pip install -r requirements.txt
 4. Run code
 
-   Create new python file or jupyter notebook; alternatively adapt notebook.ipynb which contains some examples. 
+   Create new python file or jupyter notebook; alternatively, adapt notebook.ipynb which contains some examples. 
