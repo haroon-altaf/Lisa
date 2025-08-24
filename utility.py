@@ -2,13 +2,25 @@
 from __future__ import annotations                                                                                        
 from bs4 import BeautifulSoup
 from bs4.element import Tag, ResultSet
-from loggers import web_scraping_logger    
+import logging 
 import pandas as pd
 import random
 import requests
 from requests.adapters import HTTPAdapter
+from static import LOGGING_PARAMS, REQUESTS_PARAMS
 from typing import List, Dict, Any
 from urllib3.util.retry import Retry
+
+#%%
+logger = logging.getLogger(__name__)
+file_handler = logging.FileHandler(LOGGING_PARAMS['filepath'], mode='a')
+file_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['fileformatter']))
+file_handler.setLevel(logging.ERROR)
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['consoleformatter']))
+console_handler.setLevel(logging.DEBUG)
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 #%%
 class WebSession:
@@ -19,16 +31,12 @@ class WebSession:
 
     def __init__(
         self,
-        timeout: int = 10,
-        max_retries: int = 3,
-        backoff_factor: float = 1.0,
-        session_renewal_interval: int = 1000,
-        ua_list: list[str] = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
-        ]
-    ):
+        timeout: int = REQUESTS_PARAMS['timeout'],
+        max_retries: int = REQUESTS_PARAMS['max_retries'],
+        backoff_factor: float = REQUESTS_PARAMS['backoff_factor'],
+        session_renewal_interval: int = REQUESTS_PARAMS['session_renewal_interval'],
+        ua_list: list[str] = REQUESTS_PARAMS['ua_list']
+    ) -> None:
         """
         Initializes the WebSession.
 
@@ -83,22 +91,19 @@ class WebSession:
         return session        
 
     def get(self, url: str) -> requests.Response | None:
-
-        try:
-            response = self._session.get(url, timeout=self.timeout)
-            response.raise_for_status()
-
-            self.success_count += 1
-            current_count = self.success_count
-            if current_count % self.session_renewal_interval == 0:
-                self._session.close()
-                self._session = self._init_session()
-
-            return response
-
-        except requests.exceptions.RequestException as e:
-            web_scraping_logger.error(f"Request failed for {url}: {e}")
+    
+        response = self._session.get(url, timeout=self.timeout)
+        if not response.ok:
+            logger.error(f"GET request failed for: {url}\nResponse code: {response.status_code}")
             return None
+        
+        self.success_count += 1
+        current_count = self.success_count
+        if current_count % self.session_renewal_interval == 0:
+            self._session.close()
+            self._session = self._init_session()
+        return response
+
 
     def __enter__(self):
         return self
@@ -107,7 +112,12 @@ class WebSession:
         self._session.close()
 
 #%%
-def find_content(html_content: BeautifulSoup, search_tag: str, search_attrs: Dict[str, str] = {}, methods: List[Dict[str, str | Dict[str, str]]] = []) -> Tag | ResultSet:
+def find_content(
+    html_content: BeautifulSoup,
+    search_tag: str,
+    search_attrs: Dict[str, str] = {},
+    methods: List[Dict[str, str | Dict[str, str]]] = []
+) -> Tag | ResultSet | None:
 
     """
     Extracts HTML content of the relevant report sections.
@@ -133,13 +143,21 @@ def find_content(html_content: BeautifulSoup, search_tag: str, search_attrs: Dic
     """
 
     target = html_content.find(search_tag, **search_attrs)
+    if not target:
+        logger.error(f"Failed to find tag: {search_tag} with attributes: {search_attrs}")
+        return None
+    
     if methods:
         for method in methods:
             method_name = method['name']
             method_tag = method['tag']
             method_attrs = method['attrs']
             target = getattr(target, method_name)(method_tag, **method_attrs)
-    return target   
+            if not target:
+                logger.error(f"Failed on method: {method_name} to find tag: {method_tag} with attributes: {method_attrs}")
+                return None
+    
+    return target
 
 #%%
 def p_to_str(html: Tag | ResultSet) -> str:
@@ -155,19 +173,22 @@ def p_to_str(html: Tag | ResultSet) -> str:
     Returns:
         str: The text within Tag/ResultSet elements as strings.
     """
-
-    if isinstance(html, Tag):
-        nested_tags = list(html.children)
-        any_br_tags = any([t.name == 'br' for t in nested_tags])
-        if any_br_tags:
-            return "\n".join(list(html.stripped_strings)).replace('*', '')
+    try:
+        if isinstance(html, Tag):
+            nested_tags = list(html.children)
+            any_br_tags = any([t.name == 'br' for t in nested_tags])
+            if any_br_tags:
+                return "\n".join(list(html.stripped_strings)).replace('*', '')
+            else:
+                return html.get_text().replace('*', '')
         
-        else:
-            return html.get_text().replace('*', '')
+        elif isinstance(html, ResultSet):        
+            return "\n".join([t.get_text() for t in html]).replace('*', '')
+        
+    except AttributeError:
+        logger.exception(f"Failed to extract text from tag.\n{html}")
+        return None
     
-    elif isinstance(html, ResultSet): 
-        return "\n".join([t.get_text() for t in html]).replace('*', '')
-
  #%%   
 def custom_table_to_df(table_list: ResultSet) -> List[pd.DataFrame]:
         
@@ -185,10 +206,21 @@ def custom_table_to_df(table_list: ResultSet) -> List[pd.DataFrame]:
             A list of Pandas DataFrame objects.
         """
 
+        if not isinstance(table_list, ResultSet):
+            logger.error(f"Object is not a ResultSet.\n{table_list}")
+            return None
+        
+        if not all([t.name == 'table' for t in table_list]):
+            logger.error(f"Object is not a list of <table> tags.\n{table_list}")
+            return None
+
         extracted_tables = []
         for table in table_list:
             table_data = []
             rows = table.find_all('tr')
+            if len(rows) < 1:
+                logger.error(f"Empty table encountered.\n{table}")
+                return None
 
             # Check for dual headers
             cells = rows[0].find_all(['th', 'td'])
@@ -223,23 +255,22 @@ def custom_table_to_df(table_list: ResultSet) -> List[pd.DataFrame]:
             df = pd.DataFrame(table_data)
             df.columns = multi_index
             df = df.set_index(df.columns[0])
-            if isinstance(df.index.name, tuple):
-                df.index.name = df.index.name[-1]
+            if isinstance(df.index.name, tuple): df.index.name = df.index.name[-1]
             df = df.fillna('')
             extracted_tables.append(df)
         
-        return extracted_tables
+        return extracted_tables[0]
 
-def set_private_attr(obj: Any, d: Dict) -> None:
+def set_private_attr(obj: Any, d: Dict[str, Any]) -> None:
     """
-    Sets private attributes (starting with '_') for the instance of a class using key:value pairs.
+    Sets private attributes (starting with '_') for a class instance using key:value pairs.
     This distcionary unpacking is helpful when lots of attributes are being set at once.
 
     Args:
         obj: Any
         The instance of a class to set attributes for.
 
-        d: Dict
+        d: Dict[str, Any]
         A dictionary of key:value pairs.
     
     Returns:
@@ -247,9 +278,9 @@ def set_private_attr(obj: Any, d: Dict) -> None:
     """
     [setattr(obj, f'_{k}', v) for k, v in d.items()]
 
-def set_class_prop(obj: Any, d: Dict) -> None:
+def set_class_prop(obj: Any, d: Dict[str, Any]) -> None:
     """
-    Sets class properties (allowing public access to private attributes) for the instance of a class using key:value pairs.
+    Sets class properties (allowing public access to private attributes) for class instance using key:value pairs.
     This is helpful when a @property is needed to provide read-only access to lots of attributes.
     For dataframes, a copy of the DataFrame is returned preventing modifications.
 
@@ -257,7 +288,7 @@ def set_class_prop(obj: Any, d: Dict) -> None:
         obj: Any
         The instance of a class to set attributes for.
 
-        d: Dict
+        d: Dict[str, Any]
         A dictionary of key:value pairs.
     
     Returns:
