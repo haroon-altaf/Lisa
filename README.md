@@ -8,7 +8,7 @@ The program currently consists of 4 files.
 4. **scrapers.py -  is where the majority of the web-scraping and data-trasformation logic is written.** 
 
 ## Usage
-See example usage of code in this [**jupyer notebook (via nbviewer)**](https://nbviewer.org/github/haroon-altaf/lisp/blob/93456cad544861a082ef801851ba11509437ab57/notebook.ipynb)
+See example usage of code in this [**jupyer notebook (via nbviewer)**](https://nbviewer.org/github/haroon-altaf/lisp/blob/4851898373171fa4f017c4f06bfc72e7756ee518/notebook.ipynb)
 
 ## Next Steps
 - Write data obtained from online sources into a database (SQLite or MySQL) to build a historical series over time.
