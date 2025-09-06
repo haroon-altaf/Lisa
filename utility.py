@@ -1,28 +1,162 @@
-#%%
 from __future__ import annotations                                                                                        
 from bs4 import BeautifulSoup
 from bs4.element import Tag, ResultSet
-import logging 
+import json
+import logging
+from logging.handlers import TimedRotatingFileHandler
 import pandas as pd
+from pathlib import Path
 import random
 import requests
 from requests.adapters import HTTPAdapter
-from static import LOGGING_PARAMS, REQUESTS_PARAMS
-from typing import List, Dict, Any
+from static import LOGGING_CONST, GET_REQ_CONST, DB_CONST
+import sqlalchemy as db
+from sqlalchemy.dialects.sqlite import insert
+from typing import List, Dict, Any, Set, Iterable, Tuple
 from urllib3.util.retry import Retry
 
-#%%
-logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler(LOGGING_PARAMS['filepath'], mode='a')
-file_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['fileformatter']))
-file_handler.setLevel(logging.ERROR)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['consoleformatter']))
-console_handler.setLevel(logging.DEBUG)
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+class JSONFormatter(logging.Formatter):
+    """
+    Class for specifying JSON logging format.
+    """
+    def format(self, record, datefmt='%Y-%m-%d %H:%M:%S') -> str:
+        log_record = {
+            "time": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "filename": record.filename,
+            "lineno": record.lineno,
+            "funcName": record.funcName,
+            "message": record.getMessage()
+        }
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_record)
+    
+class TemplateLogger:
+    """
+    Class for generating standard loggers for use in multiple modules.
+    """
+    def __init__(
+        self,
+        name: str,
+        log_path: str = LOGGING_CONST.file_path,
+        encoding: str = LOGGING_CONST.encoding,
+        rotation_when: str = LOGGING_CONST.rotation_when,
+        rotation_interval: int = LOGGING_CONST.rotation_interval,
+        rotation_backups: int = LOGGING_CONST.rotation_backups,
+        file_level: int = LOGGING_CONST.file_level,
+        file_format: logging.Formatter = JSONFormatter(),
+        console_level: int = LOGGING_CONST.console_level,
+        console_format: logging.Formatter = logging.Formatter(LOGGING_CONST.console_formatter, datefmt='%Y-%m-%d %H:%M:%S'),
+    ) -> None:
 
-#%%
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(10)
+        self.logger.propagate = False
+
+        if not self.logger.handlers:
+            file_handler = TimedRotatingFileHandler(log_path, encoding=encoding, when=rotation_when, interval=rotation_interval, backupCount=rotation_backups)
+            file_handler.setLevel(file_level)
+            file_handler.setFormatter(file_format)
+            self.logger.addHandler(file_handler)
+
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(console_level)
+            console_handler.setFormatter(console_format)
+            self.logger.addHandler(console_handler)
+
+logger = TemplateLogger(__name__).logger
+
+class DBTransaction:
+    """
+    Class for handling database operations. Commit and rollback occur when context manager exits.
+    """
+    def __init__(self, path: str = DB_CONST.path) -> None:
+        self._engine = db.create_engine(f"sqlite:///{path}")
+        self._metadata = db.MetaData()
+        self._connection = self._engine.connect()
+
+    def upsert_rows(self, table_name: str, data_rows: List[Dict[str, Any]], delete_first: bool = False) -> None: 
+
+        table = db.Table(table_name, self._metadata, autoload_with=self._engine)
+        pk_columns, name_types_dict = self._table_schema(table)
+        incoming_name_types_dict = {name: type(value) for name, value in data_rows[0].items()}
+        self._pre_load_checks(table, incoming_name_types_dict, name_types_dict)
+
+        if delete_first:
+            self._connection.execute(table.delete())
+
+        n_col = len(data_rows[0])
+        n_rows = len(data_rows)
+        chunk_size = DB_CONST.exe_limit // n_col
+        n_chunks = int(n_rows/chunk_size) + (n_rows % chunk_size > 0)
+        
+        for i in range(n_chunks):
+            data_rows_i = data_rows[i*chunk_size : (i+1)*chunk_size]
+            stmt = insert(table).values(data_rows_i)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=pk_columns, 
+                set_={c.name: stmt.excluded[c.name] for c in table.columns if c.name not in pk_columns}
+            )
+            self._connection.execute(stmt)
+       
+        print(f"Successful upsert in {table_name}.")
+    
+    def _pre_load_checks(self, table: db.Table, incoming_name_types_dict: Dict[str, Any], name_types_dict: Dict[str, Any], ) -> None: 
+
+        new_columns = self._new_columns(incoming_name_types_dict.keys(), name_types_dict.keys())
+        if new_columns:
+            raise ValueError(f"Received column names must match column names in table: {table.name}.\nNew columns not in database:\n{sorted(list(new_columns))}.")
+        
+        missing_columns = self._missing_columns(incoming_name_types_dict.keys(), name_types_dict.keys())
+        if missing_columns:
+            logger.warning(f"The following columns exist in database but are missing from received data:\n{sorted(list(missing_columns))}")
+        
+        type_mismatches = self._mismatching_types(incoming_name_types_dict, name_types_dict)
+        if type_mismatches:
+            raise ValueError(f"Received column types must match column types in table: {table.name}.\nMismatches:\n{type_mismatches}")
+    
+    def df_from_sql(self, table_name: str) -> pd.DataFrame:
+        return pd.read_sql_table(table_name, self._engine)
+
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._connection.commit()
+        else:
+            self._connection.rollback()
+        self._connection.close()
+
+    @staticmethod
+    def _table_schema(table: db.Table) -> Tuple[List[str], Dict[str, Any]]:
+        primary_keys = [c.name for c in table.primary_key]
+        types_dict = {c.name: c.type.python_type for c in table.columns}
+        return primary_keys, types_dict
+
+    @staticmethod
+    def _new_columns(incoming_columns: Iterable, expected_columns: Iterable) -> Set[str]:
+        return set(incoming_columns) - set(expected_columns)
+    
+    @staticmethod
+    def _missing_columns(incoming_columns: Iterable, expected_columns: Iterable) -> Set[str]:
+        return set(expected_columns) - set(incoming_columns)
+    
+    @staticmethod
+    def _mismatching_types(incoming_types_dict: Dict[str, Any], expected_types_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
+        mismatches = [
+            {"Column": name, "Received type": typ, "Required type": expected_types_dict[name]}
+            for name, typ in incoming_types_dict.items()
+            if typ not in {
+                type(None),
+                expected_types_dict[name],
+                int if expected_types_dict[name] is float else type(None), # relaxation: accept integers when floats expected; not vice versa
+            }
+        ]
+        return mismatches
+
 class WebSession:
     """
    Class to implement the resquests.get() method with automatic retries, headers, and session renewal (to avoid being blocked by sites).
@@ -31,41 +165,16 @@ class WebSession:
 
     def __init__(
         self,
-        timeout: int = REQUESTS_PARAMS['timeout'],
-        max_retries: int = REQUESTS_PARAMS['max_retries'],
-        backoff_factor: float = REQUESTS_PARAMS['backoff_factor'],
-        session_renewal_interval: int = REQUESTS_PARAMS['session_renewal_interval'],
-        ua_list: list[str] = REQUESTS_PARAMS['ua_list']
+        timeout: int = GET_REQ_CONST.timeout,
+        max_retries: int = GET_REQ_CONST.max_retries,
+        backoff_factor: float = GET_REQ_CONST.backoff_factor,
+        session_renewal_interval: int = GET_REQ_CONST.session_renewal_interval,
+        ua_list: Tuple[str] = GET_REQ_CONST.ua_list
     ) -> None:
-        """
-        Initializes the WebSession.
-
-        Args:
-            max_workers: int
-            The number of concurrent threads to use for requests.
-            
-            timeout: int
-            Default timeout for each web request in seconds.
-            
-            max_retries: int
-            Maximum number of retries for failed requests.
-            
-            backoff_factor: float
-            Factor to determine sleep time between retries.
-            
-            ua_rotation_interval: int
-            Rotate user-agent after this many successful requests.
-            
-            session_renewal_interval: int
-            Renew the entire session after this many requests.
-            
-            ua_list: list[str]
-            A list of user-agent strings to rotate through. Defaults to a built-in list.
-        """
-
-        self.timeout = timeout
-        self.session_renewal_interval = session_renewal_interval
-        self.ua_list = ua_list
+    
+        self._timeout = timeout
+        self._session_renewal_interval = session_renewal_interval
+        self._ua_list = ua_list
 
         self._retry_strategy = Retry(
             total=max_retries,
@@ -74,7 +183,7 @@ class WebSession:
             allowed_methods=["HEAD", "GET", "OPTIONS"]
         )
         self._session = self._init_session()
-        self.success_count = 0
+        self._success_count = 0
 
     def _init_session(self) -> requests.Session:
         session = requests.Session()
@@ -82,7 +191,7 @@ class WebSession:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         session.headers.update({
-            "User-Agent": random.choice(self.ua_list),
+            "User-Agent": random.choice(self._ua_list),
             "Accept-Language": "en-US,en;q=0.9",
             "Accept-Encoding": "gzip, deflate, br",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
@@ -92,14 +201,19 @@ class WebSession:
 
     def get(self, url: str) -> requests.Response | None:
     
-        response = self._session.get(url, timeout=self.timeout)
+        try:
+            response = self._session.get(url, timeout=self._timeout)
+        except (requests.exceptions.RequestException, requests.exceptions.Timeout):
+            logger.exception(f"GET request failed for: {url}")
+            return None
+        
         if not response.ok:
             logger.error(f"GET request failed for: {url}\nResponse code: {response.status_code}")
             return None
         
-        self.success_count += 1
-        current_count = self.success_count
-        if current_count % self.session_renewal_interval == 0:
+        self._success_count += 1
+        current_count = self._success_count
+        if current_count % self._session_renewal_interval == 0:
             self._session.close()
             self._session = self._init_session()
         return response
@@ -111,7 +225,6 @@ class WebSession:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._session.close()
 
-#%%
 def find_content(
     html_content: BeautifulSoup,
     search_tag: str,
@@ -159,7 +272,6 @@ def find_content(
     
     return target
 
-#%%
 def p_to_str(html: Tag | ResultSet) -> str:
 
     """
@@ -188,8 +300,7 @@ def p_to_str(html: Tag | ResultSet) -> str:
     except AttributeError:
         logger.exception(f"Failed to extract text from tag.\n{html}")
         return None
-    
- #%%   
+
 def custom_table_to_df(table_list: ResultSet) -> List[pd.DataFrame]:
         
         """
@@ -299,3 +410,30 @@ def set_class_prop(obj: Any, d: Dict[str, Any]) -> None:
             v = getattr(obj, f'_{k}')
             return v.copy(deep=True) if isinstance(v, pd.DataFrame) else v
         setattr(obj.__class__, k, property(get_fn))
+
+def logs_to_df(startswith: str =Path(LOGGING_CONST.file_path).name) -> pd.DataFrame | None:
+    """
+    Converts log files to a Pandas DataFrame.
+
+    Args:
+        startswith: str
+        The name of the log file to convert. (default: Path(LOGGING_CONST.file_path).name)
+
+    Returns:
+        df: pd.DataFrame
+        A Pandas DataFrame containing the log data.
+    """
+
+    log_files = Path.cwd().rglob(f"{startswith}*")
+    json_rows = []
+    for log_file in log_files:
+        with log_file.open("r", encoding="utf-8") as f:
+            lines = [line for line in f.readlines() if line]
+            json_rows += [json.loads(line) for line in lines]
+    
+    if json_rows:
+        df = pd.DataFrame(json_rows)
+        if "time" in df.columns:
+            df["time"] = pd.to_datetime(df["time"], errors="coerce")
+            df = df.sort_values("time")
+        return df
