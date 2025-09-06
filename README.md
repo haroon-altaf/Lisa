@@ -13,11 +13,11 @@ The program currently consists of 9 files.
 9. finviz.py - contains code for scraping data from the FinViz stock screener
 
 ## Usage
-See example usage of code in this [**jupyer notebook (via nbviewer)**](https://nbviewer.org/github/haroon-altaf/lisp/blob/4851898373171fa4f017c4f06bfc72e7756ee518/notebook.ipynb)
+See example usage of code in this [**jupyer notebook (via nbviewer)**](https://nbviewer.org/github/haroon-altaf/lisp/blob/c67b47ef0054a76287b9161d47a2944f65b5849c/notebook.ipynb)
 
 ## Next Steps
-- Write data obtained from online sources into a database to build a historical series over time.
-- Read data from database and add trend analyses/graphing features.
+- Write classes/functions to perform trend analysis and visualise economic data loaded into database.
+- Produce Streamlit app to provide analysis and KPI dashboards
 
 ## Setup
 **Python version: 3.13.3**
