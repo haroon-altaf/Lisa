@@ -1,25 +1,13 @@
-#%%
 from __future__ import annotations  
-import io
-import logging                                                                                
+import io                                                                          
 import pandas as pd
 import re
-from static import LOGGING_PARAMS, URL
+from static import DB_STRUCTURE, URL
 from typing import List, Dict
-from utility import WebSession, set_private_attr, set_class_prop
+from utility import WebSession, DBTransaction, TemplateLogger, set_private_attr, set_class_prop
 
-#%%
-logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler(LOGGING_PARAMS['filepath'], mode='a')
-file_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['fileformatter']))
-file_handler.setLevel(logging.ERROR)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['consoleformatter']))
-console_handler.setLevel(logging.DEBUG)
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+logger = TemplateLogger(__name__).logger
 
-#%%
 class TradingEconomics:
     """
     A class that holds methods for generating subclasses - each of which represents the data for a specific asset class.
@@ -31,6 +19,7 @@ class TradingEconomics:
         download_currencies: Fetches currencies data from Trading Economics and returns a Currencies object.
         download_crypto: Fetches crypto data from Trading Economics and returns a Crypto object.
         _main: Sends GET request to Trading Economics; returns a dictionary of DataFrames using _clean_df and _split_units.
+        load: Uploads data to the database.
         _clean_df: Returns a cleaned DataFrame.
         _split_units: For the "commodities" table which has units in the first column, it splits the units out into a separate column.
         _combine_dfs: Concatenates DataFrames.
@@ -39,27 +28,27 @@ class TradingEconomics:
 
     @classmethod
     def download_commodities(cls) -> Commodities | None:
-        data_dict = cls._main(url=URL.COMMODITIES.value)
+        data_dict = cls._main(url=URL.commodities)
         return Commodities(data_dict) if data_dict else None
     
     @classmethod
     def download_stocks(cls) -> Stocks | None:
-        data_dict = cls._main(url=URL.STOCKS.value)
+        data_dict = cls._main(url=URL.stocks)
         return Stocks(data_dict) if data_dict else None
     
     @classmethod
     def download_bonds(cls) -> Bonds | None:
-        data_dict = cls._main(url=URL.BONDS.value)
+        data_dict = cls._main(url=URL.bonds)
         return Bonds(data_dict) if data_dict else None
     
     @classmethod
     def download_currencies(cls) -> Currencies | None:
-        data_dict = cls._main(url=URL.CURRENCIES.value)
+        data_dict = cls._main(url=URL.currencies)
         return Currencies(data_dict) if data_dict else None
     
     @classmethod
     def download_crypto(cls) -> Crypto | None:
-        data_dict = cls._main(url=URL.CRYPTO.value)
+        data_dict = cls._main(url=URL.crypto)
         return Crypto(data_dict) if data_dict else None
 
     @classmethod
@@ -87,9 +76,23 @@ class TradingEconomics:
         for df in clean_dfs:
             category_name = df.columns[0].lower().strip()
             category_dict[category_name] = df
-        category_dict['all'] = cls._combine_dfs(clean_dfs)
+        category_dict['table'] = cls._combine_dfs(clean_dfs)
 
         return category_dict
+
+    def load(self) -> None:
+        column_map = DB_STRUCTURE[self.__class__.__name__]['table']['map']
+        table_name = DB_STRUCTURE[self.__class__.__name__]['table']['name']
+        df = self.table
+        df_cols = df.columns
+
+        new_cols = set(df_cols) - column_map.keys()
+        if new_cols:
+            raise ValueError(f"No column mapping exists for:\n{new_cols}")
+        
+        data_rows = df.rename(columns=column_map).to_dict(orient='records')
+        with DBTransaction() as conn:
+            conn.upsert_rows(table_name=table_name, data_rows=data_rows, delete_first=True)
 
     @staticmethod
     def _clean_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -104,6 +107,9 @@ class TradingEconomics:
 
         # Drop Day column
         df = df.drop(columns=['Day'], errors='ignore')
+
+        # Replace empty cells with NaN
+        df = df.replace('', pd.NA)
         
         # Rename columns, ignored if column not present in DataFrame
         df = df.rename(columns={'%': 'Day %', 'Weekly': 'Weekly %', 'Monthly': 'Monthly %', 'YTD': 'YTD %', 
@@ -151,9 +157,9 @@ class TradingEconomics:
 
         # Concatenate DataFrames
         df_combined = pd.concat(dfs, axis=0, ignore_index=True)
-        df_combined = df_combined.drop_duplicates(subset=['Item'],keep='last', ignore_index=True)
+        df_combined = df_combined.drop_duplicates(subset=['Item'],keep='first', ignore_index=True)
 
-        return df_combined
+        return df_combined 
 
 class Commodities(TradingEconomics):
     """Represents commodities data from Trading Economics. Each attribute has a DataFrame as value, unpacked from a dictionary."""
