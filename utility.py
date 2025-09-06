@@ -19,7 +19,7 @@ class JSONFormatter(logging.Formatter):
     """
     Class for specifying JSON logging format.
     """
-    def format(self, record, datefmt='%Y-%m-%d %H:%M:%S') -> str:
+    def format(self, record) -> str:
         log_record = {
             "time": self.formatTime(record, self.datefmt),
             "level": record.levelname,
@@ -48,7 +48,7 @@ class TemplateLogger:
         file_level: int = LOGGING_CONST.file_level,
         file_format: logging.Formatter = JSONFormatter(),
         console_level: int = LOGGING_CONST.console_level,
-        console_format: logging.Formatter = logging.Formatter(LOGGING_CONST.console_formatter, datefmt='%Y-%m-%d %H:%M:%S'),
+        console_format: logging.Formatter = logging.Formatter(LOGGING_CONST.console_formatter),
     ) -> None:
 
         self.logger = logging.getLogger(name)
@@ -434,6 +434,6 @@ def logs_to_df(startswith: str =Path(LOGGING_CONST.file_path).name) -> pd.DataFr
     if json_rows:
         df = pd.DataFrame(json_rows)
         if "time" in df.columns:
-            df["time"] = pd.to_datetime(df["time"], errors="coerce")
+            df["time"] = pd.to_datetime(df["time"], format="%Y-%m-%d %H:%M:%S,%f", errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
             df = df.sort_values("time")
         return df
