@@ -1,26 +1,14 @@
-#%%
 from __future__ import annotations  
 from bs4 import BeautifulSoup
-import io
-import logging    
+import io 
 import numpy as np                                                                                   
 import pandas as pd
-from static import LOGGING_PARAMS, URL
-from utility import WebSession
+from static import DB_STRUCTURE, URL
+from utility import WebSession, DBTransaction, TemplateLogger
 import zipfile
 
-#%%
-logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler(LOGGING_PARAMS['filepath'], mode='a')
-file_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['fileformatter']))
-file_handler.setLevel(logging.ERROR)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['consoleformatter']))
-console_handler.setLevel(logging.DEBUG)
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+logger = TemplateLogger(__name__).logger
 
-#%%
 class EuroSurvey:
     """
     A class to represent the EU Economic Survey data.
@@ -31,6 +19,7 @@ class EuroSurvey:
     
     Methods:
         download: Downloads the EU Economic Survey data; reads the Excel file into a DataFrame; returns a processed DataFrame.
+        load: Loads the EU Economic Survey data into a database table.
         _process_df: Processes the raw DataFrame, adding Year and Month columns.
     """
 
@@ -45,7 +34,7 @@ class EuroSurvey:
     def download(cls) -> EuroSurvey | None:
         
         # Fetch the EU Economic Survey data
-        url = URL.EURO.value
+        url = URL.euro
         with WebSession() as session:
             response = session.get(url)
             if not response:
@@ -77,6 +66,20 @@ class EuroSurvey:
 
         return cls(data) if data is not None else None
         
+    def load(self) -> None:
+        column_map = DB_STRUCTURE[self.__class__.__name__]['table']['map']
+        table_name = DB_STRUCTURE[self.__class__.__name__]['table']['name']
+        df = self.table
+        df_cols = df.columns
+
+        new_cols = set(df_cols) - column_map.keys()
+        if new_cols:
+            raise ValueError(f"No column mapping exists for:\n{new_cols}")
+        
+        data_rows = df.rename(columns=column_map).to_dict(orient='records')
+        with DBTransaction() as conn:
+            conn.upsert_rows(table_name=table_name, data_rows=data_rows)
+    
     @staticmethod
     def _process_df(df: pd.DataFrame) -> pd.DataFrame:
         

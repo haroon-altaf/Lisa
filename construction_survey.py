@@ -1,24 +1,12 @@
-#%%
 from __future__ import annotations  
 from functools import reduce
-import io
-import logging                                                                               
+import io                                                                             
 import pandas as pd
-from static import LOGGING_PARAMS, URL
-from utility import WebSession
+from static import DB_STRUCTURE, URL
+from utility import WebSession, DBTransaction, TemplateLogger
 
-#%%
-logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler(LOGGING_PARAMS['filepath'], mode='a')
-file_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['fileformatter']))
-file_handler.setLevel(logging.ERROR)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['consoleformatter']))
-console_handler.setLevel(logging.DEBUG)
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+logger = TemplateLogger(__name__).logger
 
-#%%
 class ConstructionSurvey:
     """
     A class to represent the US Census Bureau Construction Survey data.
@@ -29,6 +17,7 @@ class ConstructionSurvey:
 
     Methods:
         download: Downloads the US Census Bureau Construction Survey data; reads Excel files into DataFrames; returns a processed DataFrame.
+        load: Loads the US Census Bureau Construction Survey data into a database table.
         _process_df: Processes the raw DataFrames, merging them into one.
     """
 
@@ -44,11 +33,11 @@ class ConstructionSurvey:
         
         # Fetch the US Census Bureau Construction Survey data
         with WebSession() as session:
-            response_permit = session.get(URL.US_BUIL_PERMIT.value)
-            response_auth = session.get(URL.US_BUIL_AUTH.value)
-            response_start = session.get(URL.US_BUIL_START.value)
-            response_construct = session.get(URL.US_BUIL_CONSTRUCT.value)
-            response_complete = session.get(URL.US_BUIL_COMPLETE.value)
+            response_permit = session.get(URL.us_buil_permit)
+            response_auth = session.get(URL.us_buil_auth)
+            response_start = session.get(URL.us_buil_start)
+            response_construct = session.get(URL.us_buil_construct)
+            response_complete = session.get(URL.us_buil_complete)
         if not all([response_permit, response_auth, response_start, response_construct, response_complete]):
             return None
         
@@ -71,6 +60,20 @@ class ConstructionSurvey:
         merged_df = reduce(lambda left, right: pd.merge(left, right, on=['Year', 'Month'], how='outer'), df_list)
         merged_df = merged_df.sort_values(by=['Year', 'Month']).reset_index(drop=True)
         return cls(merged_df)
+    
+    def load(self) -> None:
+        column_map = DB_STRUCTURE[self.__class__.__name__]['table']['map']
+        table_name = DB_STRUCTURE[self.__class__.__name__]['table']['name']
+        df = self.table
+        df_cols = df.columns
+
+        new_cols = set(df_cols) - column_map.keys()
+        if new_cols:
+            raise ValueError(f"No column mapping exists for:\n{new_cols}")
+        
+        data_rows = df.rename(columns=column_map).to_dict(orient='records')
+        with DBTransaction() as conn:
+            conn.upsert_rows(table_name=table_name, data_rows=data_rows)
         
     @staticmethod
     def _process_df(xl: pd.ExcelFile) -> pd.DataFrame:
@@ -92,7 +95,7 @@ class ConstructionSurvey:
         df = df.drop(columns=['Date'])
 
         try:
-            df = df.astype({'Year': 'Int64', 'Month': 'Int64', 'Total': 'Float64'})
+            df = df.astype({'Year': 'Int64', 'Month': 'Int64', 'Total': 'Int64'})
         except ValueError:
             logger.exception(f"Unexpected data types in one or more columns.\n{df.head()}")
             return None

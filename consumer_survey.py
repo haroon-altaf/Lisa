@@ -1,23 +1,11 @@
-#%%
 from __future__ import annotations  
-import io
-import logging                                                                              
+import io                                                                            
 import pandas as pd
-from static import LOGGING_PARAMS, URL, MONTHS
-from utility import WebSession
+from static import DB_STRUCTURE, URL, MONTHS
+from utility import WebSession, DBTransaction, TemplateLogger
 
-#%%
-logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler(LOGGING_PARAMS['filepath'], mode='a')
-file_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['fileformatter']))
-file_handler.setLevel(logging.ERROR)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['consoleformatter']))
-console_handler.setLevel(logging.DEBUG)
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+logger = TemplateLogger(__name__).logger
 
-#%%
 class ConsumerSurvey:
     """
     A class to represent the US Michigan Consumer Survey data.
@@ -28,6 +16,7 @@ class ConsumerSurvey:
     
     Methods:
         download: Downloads the US Michigan Consumer Survey data; reads CSVs into DataFrames; returns a processed DataFrame.
+        load: Loads the US Michigan Consumer Survey data into a database table.
         _process_df: Processes the raw DataFrames, merging them into one.
     """
 
@@ -43,8 +32,8 @@ class ConsumerSurvey:
         
         # Fetch the US Michigan Consumer Index, and the Current and Expected Components
         with WebSession() as session:
-            response_index = session.get(URL.US_CONS_INDEX.value)
-            response_components = session.get(URL.US_CONS_COMP.value)
+            response_index = session.get(URL.us_cons_index)
+            response_components = session.get(URL.us_cons_comp)
         if not all([response_index, response_components]):
             return None
         
@@ -54,8 +43,22 @@ class ConsumerSurvey:
         data = cls._process_df(df1, df2)
         return None if data is None else cls(data)
     
+    def load(self) -> None:
+        column_map = DB_STRUCTURE[self.__class__.__name__]['table']['map']
+        table_name = DB_STRUCTURE[self.__class__.__name__]['table']['name']
+        df = self.table
+        df_cols = df.columns
+
+        new_cols = set(df_cols) - column_map.keys()
+        if new_cols:
+            raise ValueError(f"No column mapping exists for:\n{new_cols}")
+        
+        data_rows = df.rename(columns=column_map).to_dict(orient='records')
+        with DBTransaction() as conn:
+            conn.upsert_rows(table_name=table_name, data_rows=data_rows)
+    
     @staticmethod
-    def _process_df(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
+    def _process_df(df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame | None:
 
         # Drop empty columns and rows; define column names and data types  
         df1 = df1.dropna(axis=1, how='all')
@@ -84,8 +87,8 @@ class ConsumerSurvey:
         
         # Map month names to month numbers
         try:
-            df1['Month'] = df1['Month'].map(lambda x: MONTHS[x.upper().strip()])
-            df2['Month'] = df2['Month'].map(lambda x: MONTHS[x.upper().strip()])
+            df1['Month'] = df1['Month'].map(lambda x: getattr(MONTHS, x.lower().strip()))
+            df2['Month'] = df2['Month'].map(lambda x: getattr(MONTHS, x.lower().strip()))
         except KeyError:
             logger.exception(f"Month name could not be converted to number for one or more columns.\n{df1.head()}\n{df2.head()}")
             return None
