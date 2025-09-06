@@ -1,25 +1,13 @@
-#%%
 from __future__ import annotations  
-from bs4 import BeautifulSoup
-import logging                                                                               
+from bs4 import BeautifulSoup                                                                      
 import pandas as pd
 import re
-from static import LOGGING_PARAMS, URL, MONTHS
+from static import DB_STRUCTURE, URL, MONTHS
 from typing import Tuple
-from utility import WebSession
+from utility import WebSession, DBTransaction, TemplateLogger
 
-#%%
-logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler(LOGGING_PARAMS['filepath'], mode='a')
-file_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['fileformatter']))
-file_handler.setLevel(logging.ERROR)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter(LOGGING_PARAMS['consoleformatter']))
-console_handler.setLevel(logging.DEBUG)
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+logger = TemplateLogger(__name__).logger
 
-#%%
 class CaixinPmi:
     """
     A class to represent the Caixin Manufacturing and Services PMI data from Trading Economics.
@@ -34,28 +22,26 @@ class CaixinPmi:
     Methods:
         download: Overarching method exposed to public; obatins outputs from _main and calls __init__.
         _main: Downloads the Manufacturing and Services PMI data from Trading Economics.
+        load: Uploads the Caixin Manufacturing and Services PMI data to the database.
         _parse_text: Parses webpage text to extract PMI index, month, and year.
     """
 
-    def __init__(self, man_data: pd.DataFrame, ser_data: pd.DataFrame) -> None:
-        self._manufacturing_table = man_data.copy(deep=True)
-        self._services_table = ser_data.copy(deep=True)
+    def __init__(self, data: pd.DataFrame) -> None:
+        self._table = data.copy(deep=True)
 
     @property
-    def manufacturing_table(self) -> pd.DataFrame:
-        return self._manufacturing_table.copy(deep=True)
-    
-    @property
-    def services_table(self) -> pd.DataFrame:
-        return self._services_table.copy(deep=True)
+    def table(self) -> pd.DataFrame:
+        return self._table.copy(deep=True)
     
     @classmethod
     def download(cls) -> CaixinPmi | None:
-       man_data = cls._main(URL.CAIXIN_MAN_PMI.value)
-       ser_data = cls._main(URL.CAIXIN_SER_PMI.value)
+       man_data = cls._main(URL.caixin_man_pmi)
+       ser_data = cls._main(URL.caixin_ser_pmi)
        if man_data is None or ser_data is None:
            return None
-       return cls(man_data, ser_data)
+       data = man_data.merge(ser_data, how="outer", on=["Year", "Month"])
+       data = data.astype({"Year": 'Int64', "Month": 'Int64', "Manufacturing PMI": 'Float64', "Services PMI": 'Float64'})
+       return cls(data)
        
     @classmethod
     def _main(cls, url: str) -> pd.DataFrame | None:
@@ -81,11 +67,24 @@ class CaixinPmi:
         if not all(table_data):
             return None
 
-        col_name = "Manufacturing PMI" if url == URL.CAIXIN_MAN_PMI.value else "Services PMI"
+        col_name = "Manufacturing PMI" if url == URL.caixin_man_pmi else "Services PMI"
         df = pd.DataFrame(table_data, columns=["Year", "Month", col_name])
-        df = df.astype({"Year": 'Int64', "Month": 'Int64', col_name: 'Float64'})
         df = df.sort_values(by=['Year', 'Month'], ignore_index=True)
         return df
+    
+    def load(self) -> None:
+        column_map = DB_STRUCTURE[self.__class__.__name__]['table']['map']
+        table_name = DB_STRUCTURE[self.__class__.__name__]['table']['name']
+        df = self.table
+        df_cols = df.columns
+
+        new_cols = set(df_cols) - column_map.keys()
+        if new_cols:
+            raise ValueError(f"No column mapping exists for:\n{new_cols}")
+        
+        data_rows = df.rename(columns=column_map).to_dict(orient='records')
+        with DBTransaction() as conn:
+            conn.upsert_rows(table_name=table_name, data_rows=data_rows)
         
     @staticmethod
     def _parse_text(text: str) -> Tuple[int, int, float] | None:
@@ -100,7 +99,7 @@ class CaixinPmi:
         try:
             index = float(index)
             year = int(year)
-            month = int(MONTHS[month.upper().strip()].value)
+            month = getattr(MONTHS, month.lower().strip())
         except (ValueError, KeyError):
             logger.exception(f"Unexpected data or data types obtained.\nYear: {year}\nMonth: {month}\nIndex: {index}")
             return None
