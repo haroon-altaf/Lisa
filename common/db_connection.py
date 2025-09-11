@@ -1,15 +1,17 @@
 from __future__ import annotations
 from .template_logger import TemplateLogger                                                                                  
-from database_model.config import config
 import pandas as pd
+from pathlib import Path
 import sqlalchemy as db
 from sqlalchemy.dialects.sqlite import insert
 from typing import List, Dict, Any, Set, Iterable, Tuple
 
-logger = TemplateLogger(__name__).logger
-
-ENGINE = db.create_engine(f"sqlite:///{config.path}")
+SQLITE_PATH = Path(__file__).resolve().parent.parent.joinpath('Leading Indicators and Stocks.db')
+ENGINE = db.create_engine(f"sqlite:///{SQLITE_PATH}")
 METADATA = db.MetaData()
+EXE_LIMIT = 32766
+
+logger = TemplateLogger(__name__).logger
 
 class DBConnection:
     """
@@ -30,7 +32,7 @@ class DBConnection:
 
         n_col = len(data_rows[0])
         n_rows = len(data_rows)
-        chunk_size = config.exe_limit // n_col
+        chunk_size = EXE_LIMIT // n_col
         n_chunks = int(n_rows/chunk_size) + (n_rows % chunk_size > 0)
         
         for i in range(n_chunks):

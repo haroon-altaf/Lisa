@@ -1,5 +1,3 @@
-from .config import config
-
 from .bonds_table import Bonds
 from .commodities_table import Commodities
 from .crypto_table import Crypto
