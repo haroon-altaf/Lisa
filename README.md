@@ -7,8 +7,9 @@ See example usage of code in this notebook via [**Github**](https://github.com/h
 
 
 ## Next Steps
+- Create scheduler to extract, transform and load latest data at pre-determined times/intervals.
 - Write classes/functions to perform trend analysis and visualise economic data loaded into database.
-- Produce Streamlit app to provide analysis and KPI dashboards
+- Produce Streamlit app to provide analysis and KPI dashboards.
 
 
 ## Setup
