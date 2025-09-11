@@ -36,26 +36,26 @@ See example usage of code in this notebook via [**Github**](https://github.com/h
    |
    ├─ common/
    │  ├─ __init__.py
-   │  ├─ db_connection.py                # Creates SQLAlchemy engine and methods for interacting with database
+   │  ├─ db_connection.py                # Creates SQLAlchemy engine and database methods
    |  ├─ web_session.py                  # Provides context manager for requests sessions
    |  ├─ template_logger.py              # Provides template logger class for use throughout code
    |
    ├─ scrapers/
    │  ├─ __init__.py
    │  └─ ism_report.py                   # extracts, transforms and loads data from ISM business reports
-   │  └─ html_dictionary.py              # contains data structure with information on navigating ISM reports' HTML
+   │  └─ html_dictionary.py              # contains information on navigating ISM reports' HTML
    │  └─ consumer_survey.py              # extracts, transforms and loads UoM Consumer Survey data
    │  └─ construction_survey.py          # extracts, transforms and loads US Buildings Survey data
    │  └─ euro_survey.py                  # extracts, transforms and loads EU economic sentiment data
    │  └─ caixin_pmi.py                   # extracts, transforms and loads Caixin PMI data
    │  └─ finviz.py                       # extracts, transforms and loads stocks data from Finviz
-   │  └─ trading_economics.py            # extracts, transforms and loads market data from Trading Economics
+   │  └─ trading_economics.py            # extracts, transforms and loads data from Trading Economics
    |
    ├─ utils/
    │  ├─ __init__.py
    │  └─ utils.py                        # Contains miscellaneous utility functions
    | 
-   ├─ database_models/                   # Contains files containing SQLAlchemy ORM classes for each database table
+   ├─ database_models/                   # Contains SQLAlchemy ORM classes for each database table
    │  ├─ __init__.py
    │  └─ ...
    |
