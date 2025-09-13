@@ -1,4 +1,5 @@
 from __future__ import annotations
+from bs4 import BeautifulSoup
 from common import WebSession, DBConnection, TemplateLogger
 from database_model import Commodities as Commodities_Table, Stock_Indices, Bonds as Bonds_Table, Currencies as Currencies_Table, Crypto as Crypto_Table
 import io                                                                          
@@ -71,18 +72,11 @@ class TradingEconomics:
             logger.exception(f"Error in reading html tables for {url}")
             return None
         
-        clean_dfs = []
-        for df in dfs:
-            cdf = cls._clean_df(df)
-            if 'commodities' in url:
-                cdf = cls._split_units(cdf)
-            if cdf is None: return None
-            clean_dfs.append(cdf)
+        clean_dfs = [cls._clean_df(df) for df in dfs]
+        if 'commodities' in url:
+            clean_dfs = cls._split_units(clean_dfs, response.text)
 
-        category_dict = {}
-        for df in clean_dfs:
-            category_name = df.columns[0].lower().strip()
-            category_dict[category_name] = df
+        category_dict = {df.columns[0].lower().strip(): df for df in clean_dfs}
         category_dict['table'] = cls._combine_dfs(clean_dfs)
 
         return category_dict
@@ -150,26 +144,24 @@ class TradingEconomics:
         return df
     
     @staticmethod
-    def _split_units(df: pd.DataFrame) -> pd.DataFrame:
+    def _split_units(df_list: List[pd.DataFrame], response_text: str) -> List[pd.DataFrame]:
         
-        pattern1 = r'([A-Za-z]{3}\s*/.+)'
-        pattern2 = r'(Index )?Points$'
-        pattern3 = r'(USD$|EUR$|GBP$)'
-        
-        df = df.copy()
-        first_col = df.iloc[:, 0].astype('string')
-        
-        matches = first_col.apply(lambda x: re.search(f'{pattern1}|{pattern2}|{pattern3}', str(x)))
-        units = matches.apply(lambda x: x.group(0) if x else pd.NA)
-        if units.isna().all():
-            logger.error("No units found in commodities table.")
-            return None
+        soup = BeautifulSoup(response_text, 'html.parser')
+        rows = soup.find_all('tr')
+        cells = [row.find_all('td') for row in rows]
+        first_cells = [cell[0].get_text() for cell in cells if cell]
 
-        first_col = first_col.apply(lambda x: re.sub(f'{pattern1}|{pattern2}|{pattern3}', '', str(x)))
-        df.iloc[:, 0] = first_col
-        df.insert(1, "Unit", units)
+        item_unit_pairs = list(map(lambda x: list(filter(None, x.split('\n'))), first_cells))
+        items_map = {f'{item.strip()} {unit.strip()}': item.strip() for item, unit in item_unit_pairs}
+        units_map = {f'{item.strip()} {unit.strip()}': unit.strip() for item, unit in item_unit_pairs}
 
-        return df
+        for df in df_list:
+            items = df.iloc[:, 0].map(items_map)
+            units = df.iloc[:, 0].map(units_map)
+            df.iloc[:, 0] = items
+            df.insert(1, "Unit", units)
+            
+        return df_list
     
     @staticmethod
     def _combine_dfs(df: List[pd.DataFrame]) -> pd.DataFrame:
