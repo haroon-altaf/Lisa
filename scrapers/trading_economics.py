@@ -149,11 +149,10 @@ class TradingEconomics:
         soup = BeautifulSoup(response_text, 'html.parser')
         rows = soup.find_all('tr')
         cells = [row.find_all('td') for row in rows]
-        first_cells = [cell[0].get_text() for cell in cells if cell]
 
-        item_unit_pairs = list(map(lambda x: list(filter(None, x.split('\n'))), first_cells))
-        items_map = {f'{item.strip()} {unit.strip()}': item.strip() for item, unit in item_unit_pairs}
-        units_map = {f'{item.strip()} {unit.strip()}': unit.strip() for item, unit in item_unit_pairs}
+        item_unit_pairs = [(cell[0].findChild('b').get_text().strip(), cell[0].findChild('div').get_text().strip()) for cell in cells if cell]
+        items_map = {f'{item} {unit}': item for item, unit in item_unit_pairs}
+        units_map = {f'{item} {unit}': unit for item, unit in item_unit_pairs}
 
         for df in df_list:
             items = df.iloc[:, 0].map(items_map)
