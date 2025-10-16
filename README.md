@@ -23,7 +23,7 @@ See future development plans [here](https://github.com/users/haroon-altaf/projec
 3. Create virtual environment and install dependencies
    ```cmd
    cd LISA
-   uv install
+   uv sync
 4. Run code
    
    Create new python file or jupyter notebook; alternatively, adapt notebook.ipynb which contains some sample code.
