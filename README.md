@@ -20,10 +20,10 @@ See future development plans [here](https://github.com/users/haroon-altaf/projec
 2. Clone the repository
    ```cmd
    git clone https://github.com/haroon-altaf/LISA
-3. Create virtual environment and install dependencies
+3. Create virtual environment, install dependencies, install package (lisa)
    ```cmd
    cd LISA
-   uv sync
+   uv pip install -e .
 4. Run code
    
    Create new python file or jupyter notebook; alternatively, adapt notebook.ipynb which contains some sample code.
