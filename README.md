@@ -7,7 +7,7 @@ A program to extract, transform, store, analyse and visualize various leading ec
 
 
 ## Usage
-See example usage of code in this notebook via [**Github**](https://github.com/haroon-altaf/lisp/blob/main/notebook.ipynb).
+See example usage of code in [this notebook](https://github.com/haroon-altaf/lisp/blob/main/notebook.ipynb).
 
 
 ## Next Steps
@@ -23,9 +23,9 @@ See future development plans [here](https://github.com/users/haroon-altaf/projec
 2. Clone the repository
    ```cmd
    git clone https://github.com/haroon-altaf/LISA
+   cd LISA
 3. Create virtual environment
    ```cmd
-   cd LISA
    uv venv
 4. Install dependencies and lisa package
    ```cmd
