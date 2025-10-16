@@ -35,7 +35,7 @@ See future development plans [here](https://github.com/users/haroon-altaf/projec
    To explore code, create new python file or jupyter notebook; alternatively, adapt notebook.ipynb which contains some sample code.
 
 
-## File Structure (src/lisa)
+## Project File Structure
    ```text
    LISA/
    |
