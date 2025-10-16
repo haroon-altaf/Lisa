@@ -1,17 +1,14 @@
 ## LISA - Leading Indicators Scraping and Analysis
 A program to extract, transform, store, analyse and visualize various leading economic indicators and stock market data from online sources.
-
+#### Motiation:
+The primary motivation for this project is to learn development best practices and programming design patterns by building something concrete. A secondary motivation is to demonstrate my competency and document my learning trajectory. Feedback and collaboration is most welcome.
 
 ## Usage
-See example usage of code in this notebook via [**Github**](https://github.com/haroon-altaf/lisp/blob/main/notebook.ipynb)
-
-Run code online via [**Colab**](https://colab.research.google.com/github/haroon-altaf/LISA/blob/main/notebook.ipynb)
+See example usage of code in this notebook via [**Github**](https://github.com/haroon-altaf/lisp/blob/main/notebook.ipynb). Run code online via [**Colab**](https://colab.research.google.com/github/haroon-altaf/LISA/blob/main/notebook.ipynb).
 
 
 ## Next Steps
-- Create scheduler to extract, transform and load latest data at pre-determined times/intervals.
-- Write classes/functions to perform trend analysis and visualise economic data loaded into database.
-- Produce Streamlit app to provide analysis and KPI dashboards.
+See future development plans [here](url).
 
 
 ## Setup
@@ -28,6 +25,7 @@ Run code online via [**Colab**](https://colab.research.google.com/github/haroon-
    cd LISA
    uv install
 4. Run code
+   
    Create new python file or jupyter notebook; alternatively, adapt notebook.ipynb which contains some sample code.
 
 
