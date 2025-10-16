@@ -1,5 +1,11 @@
 __pycache__/
-*.pyc
+logs/
+.venv/
 .vscode/
+*.egg-info/
+
 *~
-*venv*/
+*.log
+*.pyc
+*.sqbpro
+*.lock
