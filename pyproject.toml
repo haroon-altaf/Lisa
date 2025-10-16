@@ -5,7 +5,7 @@ description = "A Python program to extract, transform, and load leading economic
 authors = [
     { name = "Haroon Altaf", email = "haroonaltaf01@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "brotlicffi>=1.1.0.0",
     "bs4>=0.0.2",
