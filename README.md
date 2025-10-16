@@ -3,7 +3,7 @@ A program to extract, transform, store, analyse and visualize various leading ec
 
 **Motiation for project:** 
 - to learn development best practices and programming design patterns via building something concrete
-- to demonstrate my competency and document my learning trajectory
+- to document my learning journey and demonstrate current level of competence
 
 
 ## Usage
