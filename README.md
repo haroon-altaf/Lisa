@@ -8,7 +8,7 @@ See example usage of code in this notebook via [**Github**](https://github.com/h
 
 
 ## Next Steps
-See future development plans [here](url).
+See future development plans [here](https://github.com/users/haroon-altaf/projects/2).
 
 
 ## Setup
