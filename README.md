@@ -4,7 +4,8 @@ A program to extract, transform, store, analyse and visualize various leading ec
 
 ## Usage
 See example usage of code in this notebook via [**Github**](https://github.com/haroon-altaf/lisp/blob/main/notebook.ipynb)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/haroon-altaf/LISA/blob/main/notebook.ipynb)
+
+Run code online via [**Colab**](https://colab.research.google.com/github/haroon-altaf/LISA/blob/main/notebook.ipynb)
 
 
 ## Next Steps
