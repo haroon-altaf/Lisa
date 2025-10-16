@@ -6,6 +6,13 @@ import pandas as pd
 from IPython.display import Markdown, display
 
 
+def find_project_root(current_path: Path) -> Path:
+    for parent in current_path.parents:
+        if (parent / "pyproject.toml").exists():
+            return parent
+    raise FileNotFoundError("Could not locate project root.")
+
+
 def logs_to_df() -> pd.DataFrame | None:
     """
     Converts log files to a Pandas DataFrame.
@@ -18,7 +25,8 @@ def logs_to_df() -> pd.DataFrame | None:
         df: pd.DataFrame
         A Pandas DataFrame containing the log data.
     """
-    log_files = Path(__file__).resolve().parents[2].rglob("*.log")
+    root = find_project_root(Path(__file__).resolve())
+    log_files = root.joinpath("logs").rglob("*.log")
     json_rows = []
     for log_file in log_files:
         with log_file.open("r", encoding="utf-8") as f:

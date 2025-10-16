@@ -6,8 +6,8 @@ from pathlib import Path
 
 from concurrent_log_handler import ConcurrentRotatingFileHandler
 
-FOLDER_PATH = Path(__file__).resolve().parents[2].joinpath("logs")
-FILE_PATH = FOLDER_PATH.joinpath("log.log")
+from lisa.utils import find_project_root
+
 ENCODING = "utf-8"
 CONSOLE_LEVEL = 10
 FILE_LEVEL = 30
@@ -15,8 +15,11 @@ CONSOLE_FORMATTER = "%(asctime)s | %(levelname)s | %(module)s | Line %(lineno)d 
 ROTATION_SIZE = 2 * 1024 * 1024
 ROTATION_BACKUPS = 5
 
-if not FOLDER_PATH.exists():
-    FOLDER_PATH.mkdir(parents=True)
+root = find_project_root(Path(__file__).resolve())
+folder_path = root.joinpath("logs")
+if not folder_path.exists():
+    folder_path.mkdir(parents=True)
+file_path = folder_path.joinpath("log.log")
 
 
 class JSONFormatter(logging.Formatter):
@@ -47,7 +50,7 @@ class TemplateLogger:
     def __init__(
         self,
         name: str,
-        log_path: str = FILE_PATH,
+        log_path: str = file_path,
         encoding: str = ENCODING,
         rotation_size: int = ROTATION_SIZE,
         rotation_backups: int = ROTATION_BACKUPS,

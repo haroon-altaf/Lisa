@@ -8,9 +8,12 @@ import pandas as pd
 import sqlalchemy as db
 from sqlalchemy.dialects.sqlite import insert
 
+from lisa.utils import find_project_root
+
 from .template_logger import TemplateLogger
 
-SQLITE_PATH = Path(__file__).resolve().parents[2].joinpath("data").joinpath("Leading Indicators and Stocks.db")
+root = find_project_root(Path(__file__).resolve())
+SQLITE_PATH = root.joinpath("data").joinpath("Leading Indicators and Stocks.db")
 ENGINE = db.create_engine(f"sqlite:///{SQLITE_PATH}")
 METADATA = db.MetaData()
 EXE_LIMIT = 32766
