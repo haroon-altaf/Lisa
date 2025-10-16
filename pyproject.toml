@@ -1,0 +1,45 @@
+[project]
+name = "lisa"
+version = "1.0"
+description = "A Python program to extract, transform, and load leading economic indicators, with subsequent analysis."
+authors = [
+    { name = "Haroon Altaf", email = "haroonaltaf01@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "brotli>=1.1.0",
+    "bs4>=0.0.2",
+    "concurrent-log-handler>=0.9.28",
+    "html5lib>=1.1",
+    "ipykernel>=7.0.1",
+    "ipython>=9.6.0",
+    "lxml>=6.0.2",
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.4",
+    "openpyxl>=3.1.5",
+    "pandas>=2.3.3",
+    "requests>=2.32.5",
+    "seaborn>=0.13.2",
+    "sqlalchemy>=2.0.44",
+    "urllib3>=2.5.0",
+]
+readme = "README.md"
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.14.0",
+    "uv>=0.9.3",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+docstring-code-line-length = 120
+
