@@ -1,7 +1,10 @@
 ## LISA - Leading Indicators Scraping and Analysis
 A program to extract, transform, store, analyse and visualize various leading economic indicators and stock market data from online sources.
-#### Motiation:
-The primary motivation for this project is to learn development best practices and programming design patterns by building something concrete. A secondary motivation is to demonstrate my competency and document my learning trajectory. Feedback and collaboration is most welcome.
+
+**Motiation for project:** 
+- to learn development best practices and programming design patterns via building something concrete
+- to demonstrate my competency and document my learning trajectory
+
 
 ## Usage
 See example usage of code in this notebook via [**Github**](https://github.com/haroon-altaf/lisp/blob/main/notebook.ipynb). Run code online via [**Colab**](https://colab.research.google.com/github/haroon-altaf/LISA/blob/main/notebook.ipynb).
