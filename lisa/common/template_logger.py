@@ -6,7 +6,7 @@ from pathlib import Path
 
 from concurrent_log_handler import ConcurrentRotatingFileHandler
 
-FOLDER_PATH = Path(__file__).resolve().parent.parent.joinpath("logs")
+FOLDER_PATH = Path(__file__).resolve().parents[2].joinpath("logs")
 FILE_PATH = FOLDER_PATH.joinpath("log.log")
 ENCODING = "utf-8"
 CONSOLE_LEVEL = 10

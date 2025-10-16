@@ -18,7 +18,7 @@ def logs_to_df() -> pd.DataFrame | None:
         df: pd.DataFrame
         A Pandas DataFrame containing the log data.
     """
-    log_files = Path(__file__).resolve().parent.parent.rglob("*.log")
+    log_files = Path(__file__).resolve().parents[2].rglob("*.log")
     json_rows = []
     for log_file in log_files:
         with log_file.open("r", encoding="utf-8") as f:
