@@ -64,8 +64,8 @@ See future development plans [here](https://github.com/users/haroon-altaf/projec
    |    │  └─ utils.py                     # Contains miscellaneous utility functions
    |    | 
    |    ├─ database_models/                # Contains SQLAlchemy ORM classes for each database table
-   |    │  ├─ __init__.py
-   |    │  └─ ...
+   |       ├─ __init__.py
+   |       └─ ...
    |
    ├─ data/
    |  └─Leading Indicators and Stocks.db   # SQLite database containing scraped data
