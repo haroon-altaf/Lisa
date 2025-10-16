@@ -35,34 +35,43 @@ See future development plans [here](https://github.com/users/haroon-altaf/projec
    To explore code, create new python file or jupyter notebook; alternatively, adapt notebook.ipynb which contains some sample code.
 
 
-## File Structure (lisa)
+## File Structure (src/lisa)
    ```text
-    lisa/
+   LISA/
    |
-   ├─ common/
-   │  ├─ __init__.py
-   │  ├─ db_connection.py                # Creates SQLAlchemy engine and database methods
-   |  ├─ web_session.py                  # Provides context manager for requests sessions
-   |  ├─ template_logger.py              # Provides template logger class for use throughout code
+   ├─ src/
+   |  └─lisa/
+   |    |
+   |    ├─ common/
+   |    │  ├─ __init__.py
+   |    │  ├─ db_connection.py             # Creates SQLAlchemy engine and database methods
+   |    |  ├─ web_session.py               # Provides context manager for requests sessions
+   |    |  └─ template_logger.py           # Provides template logger class for use throughout code
+   |    |
+   |    ├─ scrapers/
+   |    │  ├─ __init__.py
+   |    │  ├─ ism_report.py                # extracts, transforms and loads data from ISM business reports
+   |    │  ├─ html_dictionary.py           # contains information on navigating ISM reports' HTML
+   |    │  ├─ consumer_survey.py           # extracts, transforms and loads UoM Consumer Survey data
+   |    │  ├─ construction_survey.py       # extracts, transforms and loads US Buildings Survey data
+   |    │  ├─ euro_survey.py               # extracts, transforms and loads EU economic sentiment data
+   |    │  ├─ caixin_pmi.py                # extracts, transforms and loads Caixin PMI data
+   |    │  ├─ finviz.py                    # extracts, transforms and loads stocks data from Finviz
+   |    │  └─ trading_economics.py         # extracts, transforms and loads data from Trading Economics
+   |    |
+   |    ├─ utils/
+   |    │  ├─ __init__.py
+   |    │  └─ utils.py                     # Contains miscellaneous utility functions
+   |    | 
+   |    ├─ database_models/                # Contains SQLAlchemy ORM classes for each database table
+   |    │  ├─ __init__.py
+   |    │  └─ ...
    |
-   ├─ scrapers/
-   │  ├─ __init__.py
-   │  └─ ism_report.py                   # extracts, transforms and loads data from ISM business reports
-   │  └─ html_dictionary.py              # contains information on navigating ISM reports' HTML
-   │  └─ consumer_survey.py              # extracts, transforms and loads UoM Consumer Survey data
-   │  └─ construction_survey.py          # extracts, transforms and loads US Buildings Survey data
-   │  └─ euro_survey.py                  # extracts, transforms and loads EU economic sentiment data
-   │  └─ caixin_pmi.py                   # extracts, transforms and loads Caixin PMI data
-   │  └─ finviz.py                       # extracts, transforms and loads stocks data from Finviz
-   │  └─ trading_economics.py            # extracts, transforms and loads data from Trading Economics
+   ├─ data/
+   |  └─Leading Indicators and Stocks.db   # SQLite database containing scraped data
    |
-   ├─ utils/
-   │  ├─ __init__.py
-   │  └─ utils.py                        # Contains miscellaneous utility functions
-   | 
-   ├─ database_models/                   # Contains SQLAlchemy ORM classes for each database table
-   │  ├─ __init__.py
-   │  └─ ...
-   |
-   ├─ Leading Indicators and Stocks.db   # SQLits database containing scraped data
+   ├─ notebook.ipynb
+   ├─ pyproject.toml
+   ├─ README.md
+   └─ .gitignore
    ```
