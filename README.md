@@ -24,13 +24,10 @@ See future development plans [here](https://github.com/users/haroon-altaf/projec
    ```cmd
    git clone https://github.com/haroon-altaf/LISA
    cd LISA
-3. Create virtual environment
+3. Create virtual environment; install dependencies and src files
    ```cmd
-   uv venv
-4. Install dependencies and lisa package
-   ```cmd
-   uv pip install .
-5. Run code
+   uv sync
+4. Run code
    
    To explore code, create new python file or jupyter notebook; alternatively, adapt notebook.ipynb which contains some sample code.
 
@@ -70,8 +67,9 @@ See future development plans [here](https://github.com/users/haroon-altaf/projec
    ├─ data/
    |  └─Leading Indicators and Stocks.db   # SQLite database containing scraped data
    |
-   ├─ notebook.ipynb
+   ├─ notebook.ipynb                       # Jupyter notebook containing example code 
    ├─ pyproject.toml
+   ├─ uv.lock
    ├─ README.md
    └─ .gitignore
    ```
