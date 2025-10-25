@@ -9,4 +9,3 @@ logs/
 *.log
 *.pyc
 *.sqbpro
-*.lock
