@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "lisa"
 version = "1.0"
@@ -34,12 +38,14 @@ dev = [
 [tool.ruff]
 line-length = 120
 
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
-ignore = ["E501"]
-
 [tool.ruff.format]
 quote-style = "double"
 docstring-code-format = true
 docstring-code-line-length = 120
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
